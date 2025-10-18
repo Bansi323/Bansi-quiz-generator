@@ -13,12 +13,12 @@
         import { getFirestore, collection, getDocs, setDoc, doc, updateDoc, query, arrayUnion, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
         // Global variables ko define karna
-        const firebaseConfig = typeof firebase_config !== 'undefined' ? JSON.parse(firebase_config) : {};
+        const firebaseConfig = typeof _firebase_config !== 'undefined' ? JSON.parse(_firebase_config) : {};
         window.app = initializeApp(firebaseConfig);
         window.db = getFirestore(window.app);
         window.auth = getAuth(window.app);
-        window.initialAuthToken = typeof initial_auth_token !== 'undefined' ? initial_auth_token : null;
-        window.appId = typeof app_id !== 'undefined' ? app_id : 'default-app-id';
+        window.initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        window.appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
         // Auth setup function ko global scope mein rakhenge jisse JavaScript access kar sake
         window.setupAuth = async function() {
@@ -59,7 +59,7 @@
         <div id="login-gate" class="fixed inset-0 bg-gray-50 flex items-center justify-center z-50 p-4">
             <div class="bg-white p-8 rounded-xl shadow-2xl max-w-sm w-full text-center">
                 <h2 class="text-2xl font-bold text-purple-600 mb-4">Quiz Generator Access</h2>
-                <p class="text-gray-600 mb-6">Kripya shuru karne ke liye Access Code daalein.</p>
+                <p class="text-gray-600 mb-6">Kripya shuru karne ke liye *Access Code* daalein.</p>
                 
                 <input type="password" id="access-code-input" placeholder="Access Code" 
                        class="w-full p-3 border border-gray-300 rounded-lg mb-4 focus:ring-purple-500 focus:border-purple-500">
@@ -73,8 +73,7 @@
             </div>
         </div>
 
-
-<!-- Main App Content (Hidden until access code is correct) -->
+        <!-- Main App Content (Hidden until access code is correct) -->
         <div id="main-app-content">
 
             <!-- Header -->
@@ -116,8 +115,8 @@
                         <h3 class="text-md font-semibold text-gray-700">Filter By Tags (Optional)</h3>
                         <input type="text" id="filter-topic" placeholder="Topic (e.g., History, Physics)" 
                             class="w-full p-3 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500">
-                        <input type="text" id="filter-year" placeholder="Year (e.g., 2022, 2023)"
-class="w-full p-3 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500">
+                        <input type="text" id="filter-year" placeholder="Year (e.g., 2022, 2023)" 
+                            class="w-full p-3 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500">
                         <input type="text" id="filter-exam" placeholder="Exam (e.g., SSC_CGL, Railway_NTPC)" 
                             class="w-full p-3 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500">
                     </div>
@@ -176,7 +175,8 @@ class="w-full p-3 border border-gray-300 rounded-lg focus:ring-purple-500 focus:
             <button onclick="document.getElementById('notification-modal').classList.add('hidden')" class="w-full bg-red-500 text-white p-3 rounded-lg font-semibold hover:bg-red-600">Close</button>
         </div>
     </div>
-<script>
+
+    <script>
         const API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=";
         const apiKey = ""; 
         const SECRET_CODE = "quizmaster123"; 
@@ -263,13 +263,13 @@ class="w-full p-3 border border-gray-300 rounded-lg focus:ring-purple-500 focus:
                 return;
             }
 
-try {
+            try {
                 const data = JSON.parse(jsonString);
                 if (!Array.isArray(data) || data.length === 0) {
                     throw new Error("Data sahi JSON Array format mein nahi hai.");
                 }
 
-                if (!data[0].tags  !data[0].tags.topic  !data[0].tags.year || !data[0].tags.exam) {
+                if (!data[0].tags || !data[0].tags.topic || !data[0].tags.year || !data[0].tags.exam) {
                     showModal("Data Format Error", "Pehle sawal mein 'tags' object, aur usmein 'topic', 'year', 'exam' tags nahi hain. Kripya format check karein.", true);
                     return;
                 }
@@ -337,7 +337,7 @@ try {
                 document.getElementById('generate-btn').innerHTML = <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div><span class="ml-3">${text}</span>; 
             } else {
                 document.getElementById('generate-btn').innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><path d="M3 3v18h18M3 18l7-7 4 4 8-8"></path></svg>Quiz Generate Karein';
-
+            }
         }
 
         // --- Core Quiz Generation Logic ---
@@ -407,8 +407,7 @@ try {
                         const yearMatch = !lastPyqFilter.year || (tags.year && tags.year.toLowerCase().includes(lastPyqFilter.year));
                         const examMatch = !lastPyqFilter.exam || (tags.exam && tags.exam.toLowerCase().includes(lastPyqFilter.exam));
 
-
-return topicMatch && yearMatch && examMatch;
+                        return topicMatch && yearMatch && examMatch;
                     });
                     
                     if (filteredQuestions.length === 0) {
@@ -477,7 +476,8 @@ return topicMatch && yearMatch && examMatch;
             generateQuiz();
         }
 
-// --- UI Rendering ---
+
+        // --- UI Rendering ---
         function renderQuiz(data, topic) {
             const quizForm = document.getElementById('quiz-form');
             quizForm.innerHTML = '';
@@ -489,22 +489,22 @@ return topicMatch && yearMatch && examMatch;
             
             data.forEach((q, index) => {
                 const questionNumber = index + 1;
-                const questionHtml = 
+                const questionHtml = `
                     <div class="quiz-card bg-white p-5 rounded-xl shadow-md border border-purple-100" id="question-${index}">
                         <p class="text-lg font-semibold text-gray-800 mb-3">
                             <span class="text-purple-600">${questionNumber}.</span> ${q.question}
                         </p>
                         <div class="space-y-2">
-                            ${q.options.map((option, optIndex) => 
+                            ${q.options.map((option, optIndex) => `
                                 <label class="option-label block p-3 bg-gray-50 rounded-lg hover:bg-purple-50 text-gray-700">
                                     <input type="radio" name="q${index}" value="${option}" class="mr-3 text-purple-600 focus:ring-purple-500">
                                     ${option}
                                 </label>
-                            ).join('')}
+                            `).join('')}
                         </div>
                         <div class="answer-feedback mt-3 text-sm font-medium hidden" id="feedback-${index}"></div>
                     </div>
-                ;
+                `;
                 quizForm.insertAdjacentHTML('beforeend', questionHtml);
             });
         }
@@ -551,7 +551,7 @@ return topicMatch && yearMatch && examMatch;
                     feedbackElement.innerHTML = ❌ Galat Jawab. Sahi Jawab hai: <span class="font-bold">${q.correct_answer}</span>;
                     feedbackElement.classList.add('text-red-600');
 
-if(selectedOption) {
+                    if(selectedOption) {
                         selectedOption.closest('label').classList.add('bg-red-300', 'text-red-900');
                     }
                 }
