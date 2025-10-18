@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Filtered PYQ Quiz Generator</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Firebase Imports for Auth & Firestore -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, getDocs, setDoc, doc, updateDoc, query, arrayUnion, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // Global variables ko define karna
+        const firebaseConfig = typeof firebase_config !== 'undefined' ? JSON.parse(firebase_config) : {};
+        window.app = initializeApp(firebaseConfig);
+        window.db = getFirestore(window.app);
+        window.auth = getAuth(window.app);
+        window.initialAuthToken = typeof initial_auth_token !== 'undefined' ? initial_auth_token : null;
+        window.appId = typeof app_id !== 'undefined' ? app_id : 'default-app-id';
+
+        // Auth setup function ko global scope mein rakhenge jisse JavaScript access kar sake
+        window.setupAuth = async function() {
+            try {
+                if (window.initialAuthToken) {
+                    await signInWithCustomToken(window.auth, window.initialAuthToken);
+                } else {
+                    await signInAnonymously(window.auth);
+                }
+                document.getElementById('auth-status').innerText = Auth Ready. User ID: ${window.auth.currentUser.uid};
+                document.getElementById('auth-status').classList.add('text-green-600');
+                
+                // Once auth is ready, check if user should see the admin panel
+                window.checkAdminStatus(); 
+
+            } catch (error) {
+                console.error("Firebase Auth Error:", error);
+                document.getElementById('auth-status').innerText = 'Authentication Failed.';
+                document.getElementById('auth-status').classList.add('text-red-600');
+            }
+        };
+        window.setupAuth();
+    </script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f0f4f8; }
+        .quiz-card { transition: transform 0.2s, box-shadow 0.2s; }
+        .quiz-card:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
+        .option-label { cursor: pointer; transition: background-color 0.15s; }
+        #main-app-content { display: none; }
+    </style>
+</head>
+<body class="min-h-screen p-4 sm:p-8">
+
+    <div class="max-w-4xl mx-auto">
+        
+        <!-- Login Gate/Access Control Modal -->
+        <div id="login-gate" class="fixed inset-0 bg-gray-50 flex items-center justify-center z-50 p-4">
+            <div class="bg-white p-8 rounded-xl shadow-2xl max-w-sm w-full text-center">
+                <h2 class="text-2xl font-bold text-purple-600 mb-4">Quiz Generator Access</h2>
+                <p class="text-gray-600 mb-6">Kripya shuru karne ke liye Access Code daalein.</p>
+                
+                <input type="password" id="access-code-input" placeholder="Access Code" 
+                       class="w-full p-3 border border-gray-300 rounded-lg mb-4 focus:ring-purple-500 focus:border-purple-500">
+                
+                <button onclick="checkAccessCode()" id="access-btn" 
+                        class="w-full bg-purple-500 text-white p-3 rounded-lg font-bold hover:bg-purple-600 transition duration-150 shadow-md">
+                    Enter
+                </button>
+                <p id="error-message" class="text-red-500 text-sm mt-3 hidden">Access Code galat hai. Dobara koshish karein.</p>
+                <p id="auth-status" class="text-sm mt-3 text-gray-500">Authenticating...</p>
+            </div>
+        </div>
+
+Bir Singh, [18-10-2025 10:03]
+<!-- Main App Content (Hidden until access code is correct) -->
+        <div id="main-app-content">
+
+            <!-- Header -->
+            <header class="bg-purple-600 text-white p-6 rounded-xl shadow-2xl mb-8">
+                <h1 class="text-3xl font-extrabold mb-1 flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-3"><path d="M12 20h9"></path><path d="M16.5 3.5l-2.4 2.4"></path><path d="M7 7l1.4-1.4"></path><path d="M3 15s1-2 2-2 4 2 6 2 4-2 6-2 2 2 2 2"></path><path d="M18 13s-1 2-2 2-4-2-6-2-4 2-6 2-2-2-2-2"></path></svg>
+                    Advanced Filtered PYQ Quiz Generator
+                </h1>
+                <p class="text-purple-200 text-md">Topic, Year, aur Exam ke hisaab se PYQ filter karein. Unseen questions track hote hain.</p>
+            </header>
+
+            <!-- Data Management Section (PYQ Uploader - NOW ADMIN LOCKED) -->
+            <div id="pyq-uploader" class="hidden bg-red-50 p-5 rounded-xl border border-red-300 mb-8">
+                <h2 class="text-xl font-bold text-red-800 mb-3 flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                    ADMIN PANEL: PYQ Data Uploader
+                </h2>
+                <textarea id="pyq-data" rows="5" placeholder='PYQ JSON format (IMPORTANT: Har question mein tags hone chahiye). Example: [{"question": "...", "options": [...], "correct_answer": "...", "tags": {"topic": "history", "year": "2020", "exam": "ssc_cgl"}}, ...]' 
+                          class="w-full p-3 border border-gray-300 rounded-lg mb-4 focus:ring-red-500 focus:border-red-500"></textarea>
+                <button onclick="uploadPyqData()" id="upload-btn" 
+                        class="w-full bg-red-500 text-white p-3 rounded-lg font-bold hover:bg-red-600 transition duration-150 shadow-md">
+                    PYQ Data Firestore Mein Upload Karein
+                </button>
+                <p class="text-sm text-red-700 mt-2">Note: Tags jaise "topic", "year", aur "exam" zaroori hain filtering ke liye.</p>
+            </div>
+
+            <!-- Quiz Generation Section -->
+            <div class="bg-white p-6 rounded-xl shadow-lg mb-8">
+                <h2 class="text-xl font-bold text-gray-800 mb-4 border-b pb-2">🎯 Quiz Setup Karein</h2>
+                <div class="space-y-4">
+                    
+                    <select id="quiz-source" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500" onchange="toggleTopicInput()">
+                        <option value="ai">AI Generated Quiz (Custom Topic, Max 50 Qs)</option>
+                        <option value="pyq">PYQ Based Quiz (Pre-uploaded Data, Max 150 Qs)</option>
+                    </select>
+
+                    <!-- Advanced Filter Box (Hidden for AI) -->
+                    <div id="advanced-filters" class="hidden space-y-3 bg-gray-50 p-4 rounded-lg border border-gray-200">
+                        <h3 class="text-md font-semibold text-gray-700">Filter By Tags (Optional)</h3>
+                        <input type="text" id="filter-topic" placeholder="Topic (e.g., History, Physics)" 
+                            class="w-full p-3 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500">
+                        <input type="text" id="filter-year" placeholder="Year (e.g., 2022, 2023)"
+
+Bir Singh, [18-10-2025 10:03]
+class="w-full p-3 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500">
+                        <input type="text" id="filter-exam" placeholder="Exam (e.g., SSC_CGL, Railway_NTPC)" 
+                            class="w-full p-3 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500">
+                    </div>
+                    
+                    <input type="number" id="num-questions" min="1" max="150" value="15" placeholder="Sawal ki Sankhya (Max 150)"
+                           class="w-full p-3 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500">
+
+                    <button onclick="generateQuiz()" id="generate-btn" 
+                            class="w-full bg-purple-500 text-white p-3 rounded-lg font-bold hover:bg-purple-600 transition duration-150 shadow-md flex items-center justify-center">
+                        <svg id="generate-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><path d="M3 3v18h18M3 18l7-7 4 4 8-8"></path></svg>
+                        Quiz Generate Karein
+                    </button>
+                </div>
+            </div>
+
+            <!-- Quiz Display Area -->
+            <div id="quiz-container" class="space-y-6">
+                <div id="status-message" class="text-center p-6 bg-yellow-100 text-yellow-800 rounded-lg font-medium">
+                    Upar details bharein aur "Generate Quiz" button dabayein.
+                </div>
+                
+                <form id="quiz-form" class="hidden space-y-6"></form>
+
+                <div id="score-container" class="hidden bg-green-100 p-6 rounded-xl shadow-lg">
+                    <h2 class="text-3xl font-extrabold text-center text-green-700 mb-3">Quiz Complete! 🎉</h2>
+                    <p id="final-score" class="text-2xl text-center text-gray-800 font-bold mb-4"></p>
+                    <div class="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-3">
+                        <button onclick="resetQuiz()" class="flex-1 bg-blue-500 text-white p-3 rounded-lg font-bold hover:bg-blue-600 transition duration-150">
+                            Naya Topic Chunein
+                        </button>
+                        <button onclick="generateNextBatch()" id="next-batch-btn" class="flex-1 bg-purple-500 text-white p-3 rounded-lg font-bold hover:bg-purple-600 transition duration-150">
+                            Next 50 Questions (AI)
+                        </button>
+                    </div>
+                </div>
+                
+                <button onclick="submitQuiz()" id="submit-btn" 
+                        class="hidden w-full bg-green-500 text-white p-3 rounded-lg font-bold hover:bg-green-600 transition duration-150 shadow-md">
+                    Answers Submit Karein
+                </button>
+            </div>
+        </div>
+
+        <!-- Loading Spinner -->
+        <div id="loading-spinner" class="hidden flex justify-center items-center p-10">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-4 border-purple-500"></div>
+            <p class="ml-4 text-gray-700 font-medium">AI aapke liye quiz bana raha hai...</p>
+        </div>
+    </div>
+
+    <!-- NOTIFICATION MODAL (For Errors) -->
+    <div id="notification-modal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden items-center justify-center p-4">
+        <div class="bg-white p-6 rounded-xl shadow-2xl max-w-sm w-full" onclick="event.stopPropagation()">
+            <h3 id="modal-title" class="text-xl font-bold mb-3 text-red-600">Error!</h3>
+            <p id="modal-message" class="text-gray-600 mb-4"></p>
+            <button onclick="document.getElementById('notification-modal').classList.add('hidden')" class="w-full bg-red-500 text-white p-3 rounded-lg font-semibold hover:bg-red-600">Close</button>
+        </div>
+    </div>
+
+Bir Singh, [18-10-2025 10:03]
+<script>
+        const API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=";
+        const apiKey = ""; 
+        const SECRET_CODE = "quizmaster123"; 
+        
+        // ZAROORI: Yahan apni Firebase User ID daalein jise aapne copy kiya tha.
+        // Ye ID hi Admin Panel ko unlock karegi.
+        const ADMIN_USER_ID = "[YOUR_ID_HERE]"; 
+
+        let quizData = [];
+        let currentTopic = "";
+        let currentQuestionCount = 0;
+        let lastPyqFilter = {}; 
+        
+        // --- Access Control Logic ---
+        window.checkAccessCode = function() {
+            const inputCode = document.getElementById('access-code-input').value.trim();
+            const errorElement = document.getElementById('error-message');
+
+            if (inputCode === SECRET_CODE) {
+                if (window.auth && window.auth.currentUser) {
+                    errorElement.classList.add('hidden');
+                    document.getElementById('login-gate').style.display = 'none';
+                    document.getElementById('main-app-content').style.display = 'block';
+                    initializeAppLogic(); 
+                } else {
+                    errorElement.innerText = "Sahi code hai, par system abhi load ho raha hai. Kripya thoda wait karein.";
+                    errorElement.classList.remove('hidden');
+                }
+            } else {
+                errorElement.innerText = "Access Code galat hai. Dobara koshish karein.";
+                errorElement.classList.remove('hidden');
+            }
+        };
+
+        // --- Admin Status Check ---
+        window.checkAdminStatus = function() {
+            if (window.auth && window.auth.currentUser) {
+                const userId = window.auth.currentUser.uid;
+                // Check if the current user ID matches the defined ADMIN_USER_ID
+                if (userId === ADMIN_USER_ID && ADMIN_USER_ID !== "[YOUR_ID_HERE]") {
+                    document.getElementById('pyq-uploader').classList.remove('hidden');
+                } else {
+                    document.getElementById('pyq-uploader').classList.add('hidden');
+                }
+            }
+        };
+
+        // --- App Initialization After Login ---
+        function initializeAppLogic() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const initialTopic = urlParams.get('topic');
+            const initialQuestions = urlParams.get('q'); 
+            
+            window.checkAdminStatus(); 
+
+            if (initialTopic) {
+                document.getElementById('filter-topic').value = decodeURIComponent(initialTopic);
+                if (initialQuestions) {
+                    document.getElementById('num-questions').value = Math.min(150, parseInt(initialQuestions));
+                }
+                document.getElementById('quiz-source').value = urlParams.get('source') === 'pyq' ? 'pyq' : 'ai';
+                toggleTopicInput(); 
+                generateQuiz();
+            }
+        }
+        
+        // --- Helper Function: Question Hashing for Unique ID ---
+        function getQuestionHash(questionText) {
+            return questionText.toLowerCase().replace(/\s/g, '').substring(0, 30);
+        }
+
+        // --- PYQ Uploader Logic (Admin Protected) ---
+        window.uploadPyqData = async function() {
+            if (window.auth.currentUser.uid !== ADMIN_USER_ID || ADMIN_USER_ID === "[YOUR_ID_HERE]") {
+                showModal("Access Denied", "Aapke paas data upload karne ka access nahi hai, ya phir ADMIN_USER_ID set nahi ki gayi hai.", true);
+                return;
+            }
+            
+            const pyqDataElement = document.getElementById('pyq-data');
+            const jsonString = pyqDataElement.value.trim();
+            
+            if (!jsonString) {
+                showModal("Error", "Kripya JSON data paste karein.", true);
+                return;
+            }
+
+Bir Singh, [18-10-2025 10:03]
+try {
+                const data = JSON.parse(jsonString);
+                if (!Array.isArray(data) || data.length === 0) {
+                    throw new Error("Data sahi JSON Array format mein nahi hai.");
+                }
+
+                if (!data[0].tags  !data[0].tags.topic  !data[0].tags.year || !data[0].tags.exam) {
+                    showModal("Data Format Error", "Pehle sawal mein 'tags' object, aur usmein 'topic', 'year', 'exam' tags nahi hain. Kripya format check karein.", true);
+                    return;
+                }
+
+                if (!window.db || !window.auth.currentUser) {
+                    showModal("Auth Error", "Firestore connection abhi ready nahi hai.", true);
+                    return;
+                }
+                
+                const docRef = doc(window.db, "artifacts", window.appId, "public", "data", "pyq_store", "master_pyqs");
+                
+                await setDoc(docRef, { 
+                    questions: data, 
+                    last_updated: new Date().toISOString() 
+                });
+                
+                pyqDataElement.value = '';
+                showModal("Success!", PYQ Data (${data.length} sawal) Safaltapoorvak upload ho gaya hai., false);
+
+            } catch (error) {
+                console.error("PYQ Upload Error:", error);
+                showModal("JSON/Firestore Error", "Data upload nahi ho paya. Check karein ki JSON format sahi hai ya nahi: " + error.message, true);
+            }
+        }
+
+        // --- Quiz Type Change Handler ---
+        window.toggleTopicInput = function() {
+            const source = document.getElementById('quiz-source').value;
+            const filtersDiv = document.getElementById('advanced-filters');
+            const numQuestionsInput = document.getElementById('num-questions');
+            
+            if (source === 'pyq') {
+                filtersDiv.classList.remove('hidden');
+                numQuestionsInput.max = 150;
+                document.getElementById('next-batch-btn').classList.add('hidden');
+            } else {
+                filtersDiv.classList.add('hidden');
+                numQuestionsInput.max = 50;
+                document.getElementById('next-batch-btn').classList.remove('hidden');
+            }
+        }
+
+
+        // --- Utility Functions (Modal and Loading) ---
+        function showModal(title, message, isError = true) {
+            const modal = document.getElementById('notification-modal');
+            document.getElementById('modal-title').innerText = title;
+            document.getElementById('modal-message').innerText = message;
+            document.getElementById('modal-title').classList.toggle('text-red-600', isError);
+            document.getElementById('modal-title').classList.toggle('text-green-600', !isError);
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+
+        function setLoading(isLoading, text = 'Quiz Ban Raha Hai...') {
+            document.getElementById('generate-btn').disabled = isLoading;
+            const generateIcon = document.querySelector('#generate-btn svg');
+            if (generateIcon) generateIcon.classList.toggle('hidden', isLoading);
+            
+            document.getElementById('loading-spinner').classList.toggle('hidden', !isLoading);
+            document.getElementById('loading-spinner').classList.toggle('flex', isLoading);
+            document.querySelector('#loading-spinner p').innerText = text;
+            
+            if (isLoading) {
+                document.getElementById('generate-btn').innerHTML = <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div><span class="ml-3">${text}</span>; 
+            } else {
+                document.getElementById('generate-btn').innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><path d="M3 3v18h18M3 18l7-7 4 4 8-8"></path></svg>Quiz Generate Karein';
+
+Bir Singh, [18-10-2025 10:03]
+}
+        }
+
+        // --- Core Quiz Generation Logic ---
+        async function generateQuiz() {
+            const source = document.getElementById('quiz-source').value;
+            currentTopic = document.getElementById('filter-topic').value.trim(); 
+            let numQuestionsInput = parseInt(document.getElementById('num-questions').value);
+
+            if (!numQuestionsInput || numQuestionsInput < 1) {
+                showModal("Input Zaroori Hai", "Kripya questions ki sankhaya sahi se bharein.");
+                return;
+            }
+            
+            if (source === 'ai') {
+                currentTopic = document.getElementById('filter-topic').value.trim() || 'General Knowledge'; 
+                currentQuestionCount = Math.min(50, numQuestionsInput); 
+                document.getElementById('num-questions').value = currentQuestionCount;
+                document.getElementById('next-batch-btn').innerText = Next ${currentQuestionCount} Questions (AI);
+            } else {
+                currentQuestionCount = Math.min(150, numQuestionsInput); 
+            }
+            
+
+            setLoading(true, 'Quiz Data Tayyar Ho Raha Hai...');
+            document.getElementById('status-message').classList.add('hidden');
+            document.getElementById('quiz-form').classList.add('hidden');
+            document.getElementById('submit-btn').classList.add('hidden');
+            document.getElementById('score-container').classList.add('hidden');
+            quizData = []; 
+
+            try {
+                if (source === 'pyq') {
+                    // Store filter values 
+                    lastPyqFilter = {
+                        topic: document.getElementById('filter-topic').value.trim().toLowerCase(),
+                        year: document.getElementById('filter-year').value.trim().toLowerCase(),
+                        exam: document.getElementById('filter-exam').value.trim().toLowerCase(),
+                    };
+                    
+                    // --- 1. Fetch Master PYQ Data ---
+                    const masterPyqRef = doc(window.db, "artifacts", window.appId, "public", "data", "pyq_store", "master_pyqs");
+                    const masterSnap = await getDoc(masterPyqRef);
+                    
+                    if (!masterSnap.exists() || !masterSnap.data().questions) {
+                        showModal("Data Nahi Mila", "Koi PYQ master data store mein nahi hai. Kripya pehle data upload karein.", true);
+                        return;
+                    }
+                    let allQuestions = masterSnap.data().questions;
+
+
+                    // --- 2. Fetch User Progress ---
+                    const progressDocRef = doc(window.db, "artifacts", window.appId, "users", window.auth.currentUser.uid, "quiz_progress", "pyq_status");
+                    const progressSnap = await getDoc(progressDocRef);
+                    const attemptedQHashes = progressSnap.exists() ? progressSnap.data().attempted_q_hashes || [] : [];
+                    
+                    
+                    // --- 3. Filter Data (Topic, Year, Exam) and Exclude Attempted Questions ---
+                    const filteredQuestions = allQuestions.filter(q => {
+                        const qHash = getQuestionHash(q.question);
+                        if (attemptedQHashes.includes(qHash)) {
+                            return false; // Already attempted
+                        }
+
+                        // Check against user-defined filters
+                        const tags = q.tags || {};
+                        const topicMatch = !lastPyqFilter.topic || (tags.topic && tags.topic.toLowerCase().includes(lastPyqFilter.topic));
+                        const yearMatch = !lastPyqFilter.year || (tags.year && tags.year.toLowerCase().includes(lastPyqFilter.year));
+                        const examMatch = !lastPyqFilter.exam || (tags.exam && tags.exam.toLowerCase().includes(lastPyqFilter.exam));
+
+Bir Singh, [18-10-2025 10:03]
+return topicMatch && yearMatch && examMatch;
+                    });
+                    
+                    if (filteredQuestions.length === 0) {
+                        showModal("Badhai Ho!", Aapne is filter (Topic: ${lastPyqFilter.topic || 'All'}, Year: ${lastPyqFilter.year || 'All'}, Exam: ${lastPyqFilter.exam || 'All'}) ke sabhi available sawal poore kar liye hain! Naye filters chunein., false);
+                        resetQuiz();
+                        return;
+                    }
+
+                    // --- 4. Select Next Batch ---
+                    const availableCount = filteredQuestions.length;
+                    
+                    quizData = filteredQuestions.sort(() => 0.5 - Math.random()).slice(0, currentQuestionCount);
+                    currentQuestionCount = quizData.length;
+
+                    renderQuiz(quizData, PYQ Quiz: ${currentTopic || 'Filtered'} (Remaining: ${availableCount - currentQuestionCount}));
+
+                } else {
+                    // --- Generate with AI (Same as before) ---
+                    setLoading(true, AI Se ${currentQuestionCount} Sawal Ban Rahe Hain...);
+                    
+                    const systemPrompt = "You are a quiz generation expert. Your task is to generate a multiple-choice quiz based on the user's topic. For each question, provide 4 options and the single correct answer. The questions, options, and correct answers MUST be provided in Hinglish (Hindi written in Latin script, often mixed with English words). The questions should be completely different from any previous batch.";
+                    const userQuery = Generate a fresh, unique quiz with exactly ${currentQuestionCount} questions on the topic: '${currentTopic}'. The language must be Hinglish.;
+
+                    const payload = {
+                        contents: [{ parts: [{ text: userQuery }] }],
+                        systemInstruction: { parts: [{ text: systemPrompt }] },
+                        generationConfig: {
+                            responseMimeType: "application/json",
+                            responseSchema: {
+                                type: "ARRAY",
+                                items: {
+                                    type: "OBJECT",
+                                    properties: { "question": { "type": "STRING" }, "options": { "type": "ARRAY", "items": { "type": "STRING" } }, "correct_answer": { "type": "STRING" } },
+                                    "propertyOrdering": ["question", "options", "correct_answer"]
+                                }
+                            }
+                        }
+                    };
+
+                    let response = await fetch(API_URL + apiKey, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                    const result = await response.json();
+                    const jsonText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                    
+                    if (jsonText) {
+                        quizData = JSON.parse(jsonText);
+                        renderQuiz(quizData, currentTopic);
+                    } else {
+                        throw new Error("AI ne koi valid response nahi diya.");
+                    }
+                }
+
+            } catch (error) {
+                console.error("Quiz generation error:", error);
+                showModal("Error", "Quiz generate nahi ho paya: " + error.message, true);
+                document.getElementById('status-message').innerText = "Quiz generate nahi ho paya. Kripya dobara try karein.";
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        // --- Automatic Next Batch Generation (Only for AI) ---
+        window.generateNextBatch = function() {
+            document.getElementById('quiz-source').value = 'ai';
+            document.getElementById('filter-topic').value = currentTopic; 
+            document.getElementById('num-questions').value = currentQuestionCount;
+            generateQuiz();
+        }
+
+Bir Singh, [18-10-2025 10:03]
+// --- UI Rendering ---
+        function renderQuiz(data, topic) {
+            const quizForm = document.getElementById('quiz-form');
+            quizForm.innerHTML = '';
+            
+            document.getElementById('status-message').innerText = ${topic} par ${data.length} sawalon ka quiz tayaar hai!;
+            document.getElementById('status-message').classList.remove('hidden');
+            quizForm.classList.remove('hidden');
+            document.getElementById('submit-btn').classList.remove('hidden');
+            
+            data.forEach((q, index) => {
+                const questionNumber = index + 1;
+                const questionHtml = 
+                    <div class="quiz-card bg-white p-5 rounded-xl shadow-md border border-purple-100" id="question-${index}">
+                        <p class="text-lg font-semibold text-gray-800 mb-3">
+                            <span class="text-purple-600">${questionNumber}.</span> ${q.question}
+                        </p>
+                        <div class="space-y-2">
+                            ${q.options.map((option, optIndex) => 
+                                <label class="option-label block p-3 bg-gray-50 rounded-lg hover:bg-purple-50 text-gray-700">
+                                    <input type="radio" name="q${index}" value="${option}" class="mr-3 text-purple-600 focus:ring-purple-500">
+                                    ${option}
+                                </label>
+                            ).join('')}
+                        </div>
+                        <div class="answer-feedback mt-3 text-sm font-medium hidden" id="feedback-${index}"></div>
+                    </div>
+                ;
+                quizForm.insertAdjacentHTML('beforeend', questionHtml);
+            });
+        }
+
+        // --- Quiz Submission and Scoring (Saves PYQ Progress) ---
+        window.submitQuiz = async function() {
+            let score = 0;
+            const totalQuestions = quizData.length;
+            const source = document.getElementById('quiz-source').value;
+            
+            document.getElementById('submit-btn').disabled = true;
+            document.querySelectorAll('#quiz-form input[type="radio"]').forEach(input => input.disabled = true);
+
+            const attemptedHashesThisSession = [];
+
+            quizData.forEach((q, index) => {
+                const selectedOption = document.querySelector(input[name="q${index}"]:checked);
+                const questionElement = document.getElementById(question-${index});
+                const feedbackElement = document.getElementById(feedback-${index});
+                
+                // Add question hash for saving progress
+                attemptedHashesThisSession.push(getQuestionHash(q.question));
+
+                feedbackElement.classList.remove('hidden');
+                questionElement.classList.remove('border-red-400', 'border-green-400', 'bg-red-50', 'bg-green-50');
+
+                const correctLabel = Array.from(questionElement.querySelectorAll('.option-label')).find(label => {
+                    return label.querySelector('input').value === q.correct_answer;
+                });
+
+                if (correctLabel) {
+                    correctLabel.classList.add('bg-green-200', 'text-green-800', 'border-green-400');
+                    correctLabel.innerHTML += ' (✅ Sahi Jawab)';
+                }
+
+                if (selectedOption && selectedOption.value === q.correct_answer) {
+                    score++;
+                    questionElement.classList.add('border-green-400', 'bg-green-50');
+                    feedbackElement.innerHTML = '👌 Aapka Jawab Sahi Hai!';
+                    feedbackElement.classList.add('text-green-600');
+                    
+                } else {
+                    questionElement.classList.add('border-red-400', 'bg-red-50');
+                    feedbackElement.innerHTML = ❌ Galat Jawab. Sahi Jawab hai: <span class="font-bold">${q.correct_answer}</span>;
+                    feedbackElement.classList.add('text-red-600');
+
+Bir Singh, [18-10-2025 10:03]
+if(selectedOption) {
+                        selectedOption.closest('label').classList.add('bg-red-300', 'text-red-900');
+                    }
+                }
+            });
+
+            // --- Save PYQ Progress to Firestore ---
+            if (source === 'pyq' && attemptedHashesThisSession.length > 0) {
+                try {
+                    const progressDocRef = doc(window.db, "artifacts", window.appId, "users", window.auth.currentUser.uid, "quiz_progress", "pyq_status");
+                    
+                    await setDoc(progressDocRef, { 
+                        attempted_q_hashes: arrayUnion(...attemptedHashesThisSession) 
+                    }, { merge: true });
+                    console.log(Successfully saved ${attemptedHashesThisSession.length} PYQ hashes to user progress.);
+                } catch(e) {
+                    console.error("Failed to save PYQ progress:", e);
+                    showModal("Save Error", "Aapki progress save nahi ho payi. Network check karein.", true);
+                }
+            }
+            
+            document.getElementById('final-score').innerText = Aapka Score: ${score} out of ${totalQuestions};
+            document.getElementById('score-container').classList.remove('hidden');
+            document.getElementById('submit-btn').classList.add('hidden');
+        }
+
+        // --- Reset Quiz ---
+        window.resetQuiz = function() {
+            currentTopic = "";
+            currentQuestionCount = 0;
+            document.getElementById('filter-topic').value = '';
+            document.getElementById('filter-year').value = '';
+            document.getElementById('filter-exam').value = '';
+            document.getElementById('quiz-form').innerHTML = '';
+            document.getElementById('quiz-form').classList.add('hidden');
+            document.getElementById('submit-btn').classList.add('hidden');
+            document.getElementById('score-container').classList.add('hidden');
+            document.getElementById('status-message').classList.remove('hidden');
+            document.getElementById('status-message').innerText = 'Upar details bharein aur "Generate Quiz" button dabayein.';
+            document.getElementById('submit-btn').disabled = false;
+            quizData = [];
+        }
+
+    </script>
+</body>
+</html>
