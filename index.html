@@ -1,814 +1,616 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { initializeApp } from 'firebase/app';
-import { 
-    getAuth, 
-    signInAnonymously, 
-    signInWithCustomToken, 
-    onAuthStateChanged 
-} from 'firebase/auth';
-import { 
-    getFirestore, 
-    doc, 
-    setDoc, 
-    collection, 
-    query, 
-    onSnapshot, 
-    deleteDoc,
-    serverTimestamp
-} from 'firebase/firestore';
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teacher's Quiz App</title>
+    <!-- Load Tailwind CSS via CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Set default font to Inter -->
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+    <!-- Load Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, collection, query, onSnapshot, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-// --- CONFIGURATION AND UTILITIES ---
+        window.firebase = {
+            initializeApp,
+            getAuth,
+            signInAnonymously,
+            signInWithCustomToken,
+            onAuthStateChanged,
+            getFirestore,
+            doc,
+            setDoc,
+            collection,
+            query,
+            onSnapshot,
+            deleteDoc,
+            serverTimestamp
+        };
+    </script>
+</head>
+<body class="bg-gray-100">
+    <div id="app-root" class="min-h-screen p-4 md:p-8 font-['Inter']">
+        <!-- Content will be rendered here by JavaScript -->
+    </div>
 
-// Global configuration variables from the environment (Canvas provides these at runtime)
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+    <script type="module">
+        // Import Firebase functions from the global window object set up in the script tag above
+        const { 
+            initializeApp, getAuth, signInAnonymously, signInWithCustomToken, 
+            onAuthStateChanged, getFirestore, doc, setDoc, collection, 
+            query, onSnapshot, deleteDoc, serverTimestamp 
+        } = window.firebase;
 
-// Define the private Admin Key for the Teacher/Admin
-const TEACHER_ADMIN_KEY = "bansijatt"; 
-
-// Icons (using Lucide icons, available in this environment)
-const Loader = ({ size = 'h-5 w-5', color = 'text-white' }) => <svg className={`animate-spin -ml-1 mr-3 ${size} ${color}`} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>;
-
-const AlertTriangle = (props) => (
-  <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12" y1="17" y2="17"/></svg>
-);
-const BookOpenText = (props) => (
-  <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
-);
-const Zap = (props) => (
-  <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-);
-const Upload = (props) => (
-  <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
-);
-const Library = (props) => (
-  <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 4V2H8v2"/><path d="M15 11V8H9v3"/><path d="M19 13V6a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v7"/><rect width="20" height="4" x="2" y="17" rx="1"/></svg>
-);
-
-/**
- * Executes a function with exponential backoff for API retries.
- * @param {Function} apiCall - The async function to execute.
- * @param {number} maxRetries - Maximum number of retries.
- */
-const withBackoff = async (apiCall, maxRetries = 5) => {
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-        try {
-            return await apiCall();
-        } catch (error) {
-            if (attempt === maxRetries - 1) {
-                console.error("Max retries reached. API call failed.", error);
-                throw new Error("API call failed after multiple retries.");
-            }
-            const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
-            console.warn(`Attempt ${attempt + 1} failed. Retrying in ${Math.round(delay / 1000)}s...`);
-            await new Promise(resolve => setTimeout(resolve, delay));
-        }
-    }
-};
-
-/**
- * Gemini API call to generate structured quiz questions.
- * Takes numQuestions (always 10) and currentQuestionCount (offset) for stable generation.
- */
-const callGeminiApi = async (topic, numQuestions, currentQuestionCount) => {
-    // Query to ask for new, unique questions in batches
-    const userQuery = `Create a quiz of exactly ${numQuestions} new questions on the topic: "${topic}". These questions must be different from the previous ${currentQuestionCount} questions already generated. The questions and options must be strictly translated into both English and Hindi. The explanations must also be bilingual. The correct_answer_index should be 0-indexed. The quiz must be challenging and suitable for students.`;
-    
-    // Define the JSON schema for the desired structured output
-    const responseSchema = {
-        type: "ARRAY",
-        items: {
-            type: "OBJECT",
-            properties: {
-                "question_id": { "type": "INTEGER" },
-                "question_en": { "type": "STRING", "description": "The question text in English." },
-                "question_hi": { "type": "STRING", "description": "The question text in Hindi." },
-                "options_en": { 
-                    "type": "ARRAY", 
-                    "items": { "type": "STRING" },
-                    "description": "Array of 4 options in English."
-                },
-                "options_hi": { 
-                    "type": "ARRAY", 
-                    "items": { "type": "STRING" },
-                    "description": "Array of 4 options in Hindi."
-                },
-                "correct_answer_index": { 
-                    "type": "INTEGER", 
-                    "description": "0-indexed position (0, 1, 2, or 3) of the correct option." 
-                },
-                "explanation_en": { "type": "STRING", "description": "Explanation for the correct answer in English." },
-                "explanation_hi": { "type": "STRING", "description": "Explanation for the correct answer in Hindi." }
-            },
-            required: ["question_id", "question_en", "question_hi", "options_en", "options_hi", "correct_answer_index", "explanation_en", "explanation_hi"]
-        }
-    };
-
-    const payload = {
-        contents: [{ parts: [{ text: userQuery }] }],
-        generationConfig: {
-            responseMimeType: "application/json",
-            responseSchema: responseSchema,
-        },
-        systemInstruction: {
-            parts: [{ text: "You are a specialized quiz generation AI. You must return a complete JSON array of questions strictly according to the provided schema. Do not include any introductory or explanatory text outside the JSON block." }]
-        },
-    };
-
-    const apiKey = "";
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
-
-    const apiCall = async () => {
-        const response = await fetch(apiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-
-        if (!response.ok) {
-            throw new Error(`API returned status ${response.status}`);
-        }
-
-        const result = await response.json();
-        const jsonText = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+        // --- CONFIGURATION AND GLOBAL STATE ---
+        const TEACHER_ADMIN_KEY = "bansijatt"; 
         
-        if (jsonText) {
+        // Global configuration variables from the environment
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        let db = null;
+        let auth = null;
+        let unsubscribePyqs = null;
+
+        // Central state object, replaces React state
+        const appState = {
+            activeTab: 'ai',
+            isLoading: false,
+            error: null,
+            totalQuizData: [],
+            topic: '',
+            userAnswers: {},
+            currentSetIndex: 0,
+            showResult: false,
+            selectedPyqTopicId: '',
+            pyqTopics: [],
+            isTeacher: false,
+            userId: null,
+            isAuthReady: false,
+            adminKeyInput: ''
+        };
+        
+        const questionsPerPage = 10;
+        const appRoot = document.getElementById('app-root');
+
+        // --- UTILITY FUNCTIONS ---
+
+        /** Renders the entire application based on the current appState. */
+        function render() {
+            appRoot.innerHTML = MainApp();
+            attachEventListeners();
+        }
+
+        /** Sets state and triggers re-render. */
+        function setState(updates) {
+            Object.assign(appState, updates);
+            render();
+        }
+
+        /** Simple Icon components (inline SVG or utility functions in HTML) */
+        const Icon = {
+            Loader: (size = 'h-5 w-5', color = 'text-white') => `<svg class="animate-spin -ml-1 mr-3 ${size} ${color}" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>`,
+            Zap: (className = '') => `<svg class="${className}" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`,
+            BookOpenText: (className = '') => `<svg class="${className}" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>`,
+            Library: (className = '') => `<svg class="${className}" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4V2H8v2"/><path d="M15 11V8H9v3"/><path d="M19 13V6a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v7"/><rect width="20" height="4" x="2" y="17" rx="1"/></svg>`,
+            Upload: (className = '') => `<svg class="${className}" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>`,
+            AlertTriangle: (className = '') => `<svg class="${className}" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12" y1="17" y2="17"/></svg>`
+        };
+
+        const withBackoff = async (apiCall, maxRetries = 5) => {
+            for (let attempt = 0; attempt < maxRetries; attempt++) {
+                try {
+                    return await apiCall();
+                } catch (error) {
+                    if (attempt === maxRetries - 1) {
+                        console.error("Max retries reached. API call failed.", error);
+                        throw new Error("API call failed after multiple retries.");
+                    }
+                    const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
+                    console.warn(`Attempt ${attempt + 1} failed. Retrying in ${Math.round(delay / 1000)}s...`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+            }
+        };
+        
+        // --- FIREBASE SETUP ---
+
+        async function setupFirebase() {
+            if (!window.firebase) {
+                console.error("Firebase SDK not loaded.");
+                return;
+            }
+
             try {
-                return JSON.parse(jsonText);
-            } catch (e) {
-                console.error("Failed to parse JSON response:", jsonText);
-                throw new Error("AI response was not valid JSON.");
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                
+                onAuthStateChanged(auth, async (user) => {
+                    let newUserId = null;
+                    if (user) {
+                        newUserId = user.uid;
+                    } else {
+                        try {
+                            let userCredential;
+                            if (initialAuthToken) {
+                                userCredential = await signInWithCustomToken(auth, initialAuthToken);
+                            } else {
+                                userCredential = await signInAnonymously(auth);
+                            }
+                            newUserId = userCredential.user.uid;
+                        } catch (error) {
+                            console.error("Firebase Auth failed:", error);
+                            newUserId = crypto.randomUUID(); // Fallback to anonymous ID
+                        }
+                    }
+                    setState({ userId: newUserId, isAuthReady: true });
+                    subscribeToPyqs(); // Start listening for PYQs once authenticated
+                });
+            } catch (error) {
+                console.error("Firebase Initialization Failed:", error);
+                setState({ isAuthReady: true, userId: crypto.randomUUID() });
             }
         }
-        throw new Error("AI did not return any content.");
-    };
-    
-    return withBackoff(apiCall);
-};
 
+        // --- PYQ DATA MANAGEMENT ---
 
-// --- FIREBASE AND DATA HOOKS ---
+        function subscribeToPyqs() {
+            if (!db || !appState.isAuthReady || !appState.userId) return;
 
-function useFirebaseSetup() {
-    const [db, setDb] = useState(null);
-    const [auth, setAuth] = useState(null);
-    const [userId, setUserId] = useState(null);
-    const [isAuthReady, setIsAuthReady] = useState(false);
+            if (unsubscribePyqs) {
+                unsubscribePyqs(); // Clean up previous listener if exists
+            }
 
-    useEffect(() => {
-        try {
-            const app = initializeApp(firebaseConfig);
-            const firestoreDb = getFirestore(app);
-            const firebaseAuth = getAuth(app);
+            const pyqCollectionPath = `artifacts/${appId}/users/${appState.userId}/pyqs`;
+            const pyqRef = collection(db, pyqCollectionPath);
+            const q = query(pyqRef);
+
+            unsubscribePyqs = onSnapshot(q, (snapshot) => {
+                const topics = [];
+                snapshot.forEach((doc) => {
+                    topics.push({ id: doc.id, ...doc.data() });
+                });
+                setState({ pyqTopics: topics });
+            }, (error) => {
+                console.error("Error listening to PYQ data:", error);
+                setState({ error: "Previous Year Questions (PYQ) data fetch karne mein error aayi." });
+            });
+        }
+        
+        // --- GEMINI API CALL ---
+
+        const callGeminiApi = async (topic, numQuestions, currentQuestionCount) => {
+            const userQuery = `Create a quiz of exactly ${numQuestions} new questions on the topic: "${topic}". These questions must be different from the previous ${currentQuestionCount} questions already generated. The questions and options must be strictly translated into both English and Hindi. The explanations must also be bilingual. The correct_answer_index should be 0-indexed. The quiz must be challenging and suitable for students.`;
             
-            setDb(firestoreDb);
-            setAuth(firebaseAuth);
+            const responseSchema = {
+                type: "ARRAY",
+                items: {
+                    type: "OBJECT",
+                    properties: {
+                        "question_id": { "type": "INTEGER" },
+                        "question_en": { "type": "STRING", "description": "The question text in English." },
+                        "question_hi": { "type": "STRING", "description": "The question text in Hindi." },
+                        "options_en": { "type": "ARRAY", "items": { "type": "STRING" }, "description": "Array of 4 options in English." },
+                        "options_hi": { "type": "ARRAY", "items": { "type": "STRING" }, "description": "Array of 4 options in Hindi." },
+                        "correct_answer_index": { "type": "INTEGER", "description": "0-indexed position (0, 1, 2, or 3) of the correct option." },
+                        "explanation_en": { "type": "STRING", "description": "Explanation for the correct answer in English." },
+                        "explanation_hi": { "type": "STRING", "description": "Explanation for the correct answer in Hindi." }
+                    },
+                    required: ["question_id", "question_en", "question_hi", "options_en", "options_hi", "correct_answer_index", "explanation_en", "explanation_hi"]
+                }
+            };
 
-            // Authentication
-            onAuthStateChanged(firebaseAuth, async (user) => {
-                if (user) {
-                    setUserId(user.uid);
-                } else {
-                    // Sign in with custom token or anonymously
+            const payload = {
+                contents: [{ parts: [{ text: userQuery }] }],
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: responseSchema,
+                },
+                systemInstruction: {
+                    parts: [{ text: "You are a specialized quiz generation AI. You must return a complete JSON array of questions strictly according to the provided schema. Do not include any introductory or explanatory text outside the JSON block." }]
+                },
+            };
+
+            const apiKey = "";
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+
+            const apiCall = async () => {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`API returned status ${response.status}`);
+                }
+
+                const result = await response.json();
+                const jsonText = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+                
+                if (jsonText) {
                     try {
-                        let userCredential;
-                        if (initialAuthToken) {
-                            userCredential = await signInWithCustomToken(firebaseAuth, initialAuthToken);
-                        } else {
-                            userCredential = await signInAnonymously(firebaseAuth);
-                        }
-                        setUserId(userCredential.user.uid);
-                    } catch (error) {
-                        console.error("Firebase Auth failed:", error);
-                        setUserId(crypto.randomUUID()); // Fallback to anonymous ID
+                        return JSON.parse(jsonText);
+                    } catch (e) {
+                        console.error("Failed to parse JSON response:", jsonText);
+                        throw new Error("AI response was not valid JSON.");
                     }
                 }
-                setIsAuthReady(true);
-            });
-        } catch (error) {
-            console.error("Firebase Initialization Failed:", error);
-            setIsAuthReady(true);
-            setUserId(crypto.randomUUID()); // Use UUID if firebase setup fails
-        }
-    }, []);
-
-    return { db, auth, userId, isAuthReady };
-}
-
-function usePYQData(db, userId, isAuthReady, setError) {
-    const [pyqTopics, setPyqTopics] = useState([]);
-
-    useEffect(() => {
-        if (!db || !isAuthReady || !userId) return;
-
-        // Private collection path: /artifacts/{appId}/users/{userId}/{collectionName}
-        const pyqCollectionPath = `artifacts/${appId}/users/${userId}/pyqs`;
-        const pyqRef = collection(db, pyqCollectionPath);
-        
-        // Listen for real-time updates
-        const q = query(pyqRef);
-
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const topics = [];
-            snapshot.forEach((doc) => {
-                // Documents contain questions array, topic, and year
-                topics.push({ id: doc.id, ...doc.data() });
-            });
-            setPyqTopics(topics);
-        }, (error) => {
-            console.error("Error listening to PYQ data:", error);
-            setError("Previous Year Questions (PYQ) data fetch karne mein error aayi.");
-        });
-
-        // Cleanup listener on component unmount
-        return () => unsubscribe();
-    }, [db, userId, isAuthReady, setError]);
-
-    return pyqTopics;
-}
-
-
-// --- COMPONENTS ---
-
-/**
- * Component to display a single quiz question, now in Bilingual format.
- * isPyqQuiz prop is used to conditionally hide the explanation.
- */
-const QuizQuestion = ({ question, index, userAnswers, setUserAnswers, showResult, isPyqQuiz }) => {
-    const qIndex = index;
-    const isSubmitted = showResult;
-    
-    // Hindi and English versions are used directly
-    const optionsEn = question.options_en;
-    const optionsHi = question.options_hi;
-    const explanationEn = question.explanation_en;
-    const explanationHi = question.explanation_hi;
-
-    const selectedOptionIndex = userAnswers[qIndex];
-    const isCorrect = isSubmitted && selectedOptionIndex === question.correct_answer_index;
-    const isIncorrect = isSubmitted && selectedOptionIndex !== null && selectedOptionIndex !== question.correct_answer_index;
-
-    const handleOptionSelect = (optionIndex) => {
-        if (!isSubmitted) {
-            setUserAnswers(prev => ({ ...prev, [qIndex]: optionIndex }));
-        }
-    };
-
-    return (
-        <div className="bg-white p-6 rounded-xl shadow-lg mb-6 border border-gray-100">
-            <p className="text-lg font-semibold text-gray-800 mb-1">
-                <span className="text-indigo-600 mr-2">Q{index + 1}.</span> {question.question_en} 
-            </p>
-            <p className="text-base text-gray-600 mb-4 italic">
-                {question.question_hi}
-            </p>
-
-            <div className="space-y-3">
-                {[0, 1, 2, 3].map((idx) => {
-                    const isSelected = selectedOptionIndex === idx;
-                    const isCorrectOption = question.correct_answer_index === idx;
-
-                    let className = "p-3 rounded-lg border cursor-pointer transition duration-200 flex items-center";
-                    
-                    if (isSubmitted) {
-                        if (isCorrectOption) {
-                            // Correct answer highlighted in green
-                            className += " bg-emerald-100 border-emerald-500 text-emerald-800 font-medium";
-                        } else if (isSelected && isIncorrect) {
-                            // User selected wrong answer, highlighted in red
-                            className += " bg-red-100 border-red-500 text-red-800 font-medium line-through";
-                        } else {
-                            // Unselected wrong answer
-                            className += " bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100";
-                        }
-                    } else {
-                        // Not submitted yet
-                        className += isSelected 
-                            ? " bg-indigo-50 border-indigo-500 text-indigo-700 font-medium" 
-                            : " bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100";
-                    }
-
-                    return (
-                        <div key={idx} 
-                             className={className} 
-                             onClick={() => handleOptionSelect(idx)}>
-                            <span className="w-5 h-5 mr-3 text-center font-bold">
-                                {String.fromCharCode(65 + idx)}
-                            </span>
-                            <div>
-                                <p className="font-medium text-gray-900">{optionsEn[idx]}</p>
-                                <p className="text-sm text-gray-500 italic">{optionsHi[idx]}</p>
-                            </div>
-                        </div>
-                    );
-                })}
-            </div>
-
-            {/* Explanation Logic: Show Explanation only if it's NOT a PYQ quiz (isPyqQuiz === false) */}
-            {isSubmitted && (
-                <div className={`mt-5 p-4 rounded-xl ${isCorrect ? 'bg-emerald-50' : isIncorrect ? 'bg-red-50' : 'bg-gray-50'} border-l-4 ${isCorrect ? 'border-emerald-600' : isIncorrect ? 'border-red-600' : 'border-gray-300'}`}>
-                    <h4 className={`font-bold text-sm mb-2 ${isCorrect ? 'text-emerald-700' : 'text-red-700'}`}>
-                        {isCorrect ? 'Correct Answer! (सही जवाब!)' : 'Incorrect Answer. (गलत जवाब.)'}
-                    </h4>
-                    
-                    {!isPyqQuiz && (
-                        <>
-                            <p className="text-sm text-gray-700">
-                                <span className="font-semibold text-indigo-600">Explanation (व्याख्या): </span>
-                                {explanationEn}
-                            </p>
-                            <p className="text-sm text-gray-700 mt-1 italic">
-                                {explanationHi}
-                            </p>
-                        </>
-                    )}
-                    {isPyqQuiz && (
-                        <p className="text-sm text-gray-500 italic mt-1">
-                            (PYQ mode mein explanation chhupa hua hai.)
-                        </p>
-                    )}
-                </div>
-            )}
-        </div>
-    );
-};
-
-/**
- * Main AI Quiz Generator Tab - Includes PYQ selection when no quiz is running.
- */
-const AiQuizGenerator = ({ totalQuizData, setTotalQuizData, isLoading, setIsLoading, setError, pyqTopics }) => {
-    const [topic, setTopic] = useState('');
-    const [userAnswers, setUserAnswers] = useState({});
-    const [currentSetIndex, setCurrentSetIndex] = useState(0); // 0, 10, 20, 30, 40...
-    const [showResult, setShowResult] = useState(false);
-    const [selectedPyqTopicId, setSelectedPyqTopicId] = useState('');
-    
-    const questionsPerPage = 10;
-    
-    // Slice the current 10 questions to display
-    const currentQuestions = useMemo(() => {
-        return totalQuizData.slice(currentSetIndex, currentSetIndex + questionsPerPage);
-    }, [totalQuizData, currentSetIndex]);
-
-    // Total questions currently generated
-    const totalGenerated = totalQuizData.length;
-    
-    // Check if we have loaded questions that are not yet visible
-    const hasNextLoadedSet = currentSetIndex + questionsPerPage < totalGenerated;
-    
-    // Determine quiz type
-    const isCurrentQuizPyq = totalQuizData.length > 0 && totalQuizData[0].isPyq; 
-    const isAiQuiz = totalQuizData.length > 0 && !isCurrentQuizPyq;
-
-    // AI Quiz control flags
-    const needsNewFetch = isAiQuiz && (currentSetIndex + questionsPerPage === totalGenerated);
-    const isPyqQuizComplete = isCurrentQuizPyq && (currentSetIndex + questionsPerPage >= totalGenerated);
-
-    // Function to reset all quiz state variables
-    const resetQuizState = () => {
-        setTotalQuizData([]);
-        setUserAnswers({});
-        setCurrentSetIndex(0);
-        setShowResult(false);
-        setError(null);
-        setSelectedPyqTopicId(''); // Reset PYQ selection too
-    };
-
-
-    const handleGenerate = async () => {
-        if (!topic.trim()) {
-            setError("Kripya topic ka naam daalein. (Please enter the topic name.)");
-            return;
-        }
-
-        resetQuizState();
-        setIsLoading(true);
-        
-        try {
-            // Request the first 10 questions
-            const data = await callGeminiApi(topic.trim(), questionsPerPage, 0);
+                throw new Error("AI did not return any content.");
+            };
             
-            // Assign temporary unique IDs for answer tracking
-            const processedData = data.map((q, idx) => ({ 
-                ...q, 
-                tempId: idx,
-                isPyq: false, // Mark as AI generated
-            }));
+            return withBackoff(apiCall);
+        };
+        
+        // --- HANDLERS (Replaced React Hooks) ---
+
+        function handleAdminLogin() {
+            if (appState.adminKeyInput === TEACHER_ADMIN_KEY) {
+                setState({ 
+                    isTeacher: true, 
+                    error: null, 
+                    adminKeyInput: '',
+                    activeTab: 'pyq'
+                }); 
+            } else {
+                setState({ 
+                    error: "Admin Key galat hai. Kripya sahi key daalein. (Incorrect Admin Key. Please enter the correct key.)", 
+                    isTeacher: false,
+                    adminKeyInput: ''
+                });
+            }
+        }
+
+        async function handleGenerate() {
+            if (!appState.topic.trim()) {
+                setState({ error: "Kripya topic ka naam daalein. (Please enter the topic name.)" });
+                return;
+            }
+
+            setState({
+                totalQuizData: [], userAnswers: {}, currentSetIndex: 0, showResult: false,
+                error: null, selectedPyqTopicId: '', isLoading: true
+            });
             
-            setTotalQuizData(processedData); 
-        } catch (e) {
-            console.error(e);
-            setError(`Quiz generate nahi ho paya. Kripya dobara koshish karein. Error: ${e.message}`);
-        } finally {
-            setIsLoading(false);
-        }
-    };
-    
-    const handlePyqLoad = () => {
-        const selectedItem = pyqTopics.find(t => t.id === selectedPyqTopicId);
-        
-        if (!selectedItem || !selectedItem.questions || selectedItem.questions.length === 0) {
-            setError("Kripya ek valid PYQ set chunein jismein sawal maujood hon. (Please select a valid PYQ set with questions.)");
-            return;
-        }
-
-        resetQuizState(); // Reset AI quiz state first
-        setIsLoading(true);
-        
-        // 1. Process and load PYQ data
-        const processedPyqData = selectedItem.questions.map((q, idx) => ({
-            ...q,
-            tempId: `pyq-${selectedItem.id}-${idx}`,
-            isPyq: true, // Mark as PYQ
-            topic: selectedItem.topic, // Carry over metadata
-            year: selectedItem.year,
-        }));
-        
-        setTotalQuizData(processedPyqData);
-        setIsLoading(false);
-        
-        // Auto-start the quiz by moving to the first set
-        setCurrentSetIndex(0); 
-    };
-
-    const handleNext = async () => {
-        // PYQ Quiz logic: just advance the index if the next set is loaded (no fetching needed for PYQ)
-        if (isCurrentQuizPyq && hasNextLoadedSet) {
-             setCurrentSetIndex(prev => prev + questionsPerPage);
-             setShowResult(false);
-             window.scrollTo({ top: 0, behavior: 'smooth' });
-             return;
-        }
-        
-        // AI Quiz logic: If the next set is already loaded in totalQuizData, just move the index
-        if (isAiQuiz && hasNextLoadedSet) {
-            setCurrentSetIndex(prev => prev + questionsPerPage);
-            setShowResult(false);
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-            return;
-        }
-
-        // AI Quiz logic: If we reached the end of loaded data, fetch new questions (unlimited)
-        if (needsNewFetch) {
-            setIsLoading(true);
-            setError(null);
-
             try {
-                // Fetch the next 10 questions, passing the current total length as offset
-                const newQuestions = await callGeminiApi(topic.trim(), questionsPerPage, totalGenerated);
-                
-                // Assign unique IDs based on the current total length
-                const processedData = newQuestions.map((q, idx) => ({ 
-                    ...q, 
-                    tempId: totalGenerated + idx,
-                    isPyq: false,
+                const data = await callGeminiApi(appState.topic.trim(), questionsPerPage, 0);
+                const processedData = data.map((q, idx) => ({ 
+                    ...q, tempId: idx, isPyq: false,
                 }));
-                
-                // Append new questions to the existing list
-                setTotalQuizData(prevData => [...prevData, ...processedData]);
-                
-                // Move view index to the newly loaded set (which is the old totalGenerated length)
-                setCurrentSetIndex(totalGenerated); 
-                setShowResult(false);
-                window.scrollTo({ top: 0, behavior: 'smooth' });
+                setState({ totalQuizData: processedData }); 
             } catch (e) {
                 console.error(e);
-                setError(`Agla set generate nahi ho paya. Kripya dobara koshish karein. Error: ${e.message}`);
+                setState({ error: `Quiz generate nahi ho paya. Kripya dobara koshish karein. Error: ${e.message}` });
             } finally {
-                setIsLoading(false);
+                setState({ isLoading: false });
             }
         }
-    };
-    
-    const handleSubmit = () => {
-        // Switch to result view
-        setShowResult(true);
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-    };
 
-
-    const calculateScore = () => {
-        let correctCount = 0;
-        const currentSetStart = currentSetIndex;
-        const currentSetEnd = currentSetIndex + currentQuestions.length;
-
-        // Iterate through the current set using the global index
-        for (let i = currentSetStart; i < currentSetEnd; i++) {
-            const question = totalQuizData[i];
-            if (userAnswers[i] === question?.correct_answer_index) {
-                correctCount++;
+        function handlePyqLoad() {
+            const selectedItem = appState.pyqTopics.find(t => t.id === appState.selectedPyqTopicId);
+            
+            if (!selectedItem || !selectedItem.questions || selectedItem.questions.length === 0) {
+                setState({ error: "Kripya ek valid PYQ set chunein jismein sawal maujood hon. (Please select a valid PYQ set with questions.)" });
+                return;
             }
-        }
-        return { correctCount, totalCount: currentQuestions.length };
-    };
 
-    const { correctCount, totalCount } = calculateScore();
-    
-    // Determine the button text based on state
-    let generateButtonText = (totalGenerated > 0) ? 'Naya Topic Shuru Karein' : 'Quiz Shuru Karein (10 Sawal)';
-    if (isLoading && totalGenerated === 0) {
-        generateButtonText = 'Questions Ban Rahe Hain...';
-    } 
-
-    return (
-        <div className="space-y-6">
-            <h2 className="text-3xl font-bold text-gray-900 mb-6 flex items-center">
-                <Zap className="w-6 h-6 mr-3 text-indigo-600"/>
-                AI Quiz Generator
-            </h2>
-
-            {/* AI Quiz Generation Section */}
-            <div className="bg-white p-6 rounded-xl shadow-lg flex flex-col md:flex-row gap-4">
-                <input
-                    type="text"
-                    placeholder="Topic ka naam daalein (e.g., MS Excel, Photosynthesis)"
-                    value={topic}
-                    onChange={(e) => setTopic(e.target.value)}
-                    className="flex-1 p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                    disabled={isLoading}
-                />
-                <button
-                    onClick={handleGenerate}
-                    disabled={isLoading || !topic.trim()}
-                    className="md:w-auto w-full px-6 py-3 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 transition duration-300 shadow-md disabled:opacity-50 flex items-center justify-center"
-                >
-                    {isLoading && totalGenerated === 0 && <Loader />}
-                    {generateButtonText}
-                </button>
-            </div>
+            setState({
+                totalQuizData: [], userAnswers: {}, currentSetIndex: 0, showResult: false,
+                error: null, isLoading: true, topic: selectedItem.topic // Set topic for display
+            });
             
-            {/* PYQ Selection Section (Visible only when no quiz is running) */}
-            {totalGenerated === 0 && (
-                <div className="bg-white p-6 rounded-xl shadow-lg border-t-4 border-emerald-500 space-y-4">
-                    <h3 className="text-xl font-bold text-emerald-700 flex items-center">
-                        <Library className="w-5 h-5 mr-2"/>
-                        Ya Phir, Previous Year Question (PYQ) Load Karein
-                    </h3>
-
-                    {pyqTopics.length === 0 ? (
-                        <p className="text-gray-600">
-                            Aapne abhi tak koi PYQ data upload nahi kiya hai. Kripya pehle **"PYQ Questions Add/Delete Karein"** tab mein jaakar apne sawal upload karein.
-                        </p>
-                    ) : (
-                        <div className="flex flex-col md:flex-row gap-4">
-                            <select
-                                value={selectedPyqTopicId}
-                                onChange={(e) => setSelectedPyqTopicId(e.target.value)}
-                                className="flex-1 p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 bg-white"
-                                disabled={isLoading}
-                            >
-                                <option value="">--- Topic aur Saal (Year) Chunein ---</option>
-                                {pyqTopics.map((item) => (
-                                    <option key={item.id} value={item.id}>
-                                        {item.topic} (Year: {item.year}, Sawal: {item.questions.length})
-                                    </option>
-                                ))}
-                            </select>
-                            <button
-                                onClick={handlePyqLoad}
-                                disabled={isLoading || !selectedPyqTopicId}
-                                className="md:w-auto w-full px-6 py-3 bg-emerald-600 text-white font-semibold rounded-xl hover:bg-emerald-700 transition duration-300 shadow-md disabled:opacity-50 flex items-center justify-center"
-                            >
-                                Load PYQ Quiz
-                            </button>
-                        </div>
-                    )}
-                </div>
-            )}
+            const processedPyqData = selectedItem.questions.map((q, idx) => ({
+                ...q, tempId: `pyq-${selectedItem.id}-${idx}`, isPyq: true, topic: selectedItem.topic, year: selectedItem.year,
+            }));
             
-            {totalGenerated > 0 && (
-                <div className={`text-center p-3 rounded-xl shadow-sm font-medium ${isAiQuiz ? 'bg-indigo-50 text-indigo-700' : 'bg-emerald-50 text-emerald-700'}`}>
-                    {isAiQuiz ? 'AI Quiz Active' : `PYQ Quiz Active: ${totalQuizData[0].topic} (${totalQuizData[0].year})`}
-                    . Total Questions: {totalGenerated}. Currently Showing: {currentSetIndex + 1} - {Math.min(currentSetIndex + questionsPerPage, totalGenerated)}
-                </div>
-            )}
-
-            {currentQuestions.length > 0 && (
-                <>
-                    {/* Score Card - visible after submission */}
-                    {showResult && (
-                        <div className="bg-white p-6 rounded-xl shadow-xl border-t-4 border-indigo-600 text-center">
-                            <h3 className="text-3xl font-extrabold text-indigo-600 mb-2">
-                                Your Score (Aapka Score)
-                            </h3>
-                            <p className="text-5xl font-black text-gray-900">
-                                {correctCount} / {totalCount}
-                            </p>
-                            <p className="mt-2 text-lg text-gray-600">
-                                Great job! Aapne {correctCount} sawalon ka sahi jawab diya.
-                            </p>
-                        </div>
-                    )}
-                    
-                    {/* Quiz Questions List */}
-                    {currentQuestions.map((q, index) => (
-                        <QuizQuestion
-                            key={q.tempId} // Use tempId for stable key
-                            question={q}
-                            index={currentSetIndex + index} // Pass global index
-                            userAnswers={userAnswers}
-                            setUserAnswers={setUserAnswers}
-                            showResult={showResult}
-                            isPyqQuiz={isCurrentQuizPyq} // Pass the PYQ flag here
-                        />
-                    ))}
-
-                    {/* Action Buttons */}
-                    <div className="flex justify-between items-center pt-4">
-                        {!showResult && (
-                            <button
-                                onClick={handleSubmit}
-                                className="px-8 py-3 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-700 transition duration-300 shadow-lg text-lg"
-                            >
-                                Submit Karein (Submit)
-                            </button>
-                        )}
-
-                        {showResult && !isPyqQuizComplete && (
-                            <button
-                                onClick={handleNext}
-                                disabled={isLoading}
-                                className="px-8 py-3 bg-sky-600 text-white font-bold rounded-xl hover:bg-sky-700 transition duration-300 shadow-lg text-lg disabled:opacity-50 flex items-center"
-                            >
-                                {isLoading ? <Loader size="h-6 w-6" /> : null}
-                                {isLoading ? 'Generating Next Set...' : 'Start Next 10 Questions'}
-                            </button>
-                        )}
-                         {showResult && isPyqQuizComplete && (
-                             <p className="text-lg font-semibold text-emerald-700">
-                                PYQ set complete ho gaya hai! Naya set chunein.
-                            </p>
-                        )}
-                    </div>
-                </>
-            )}
-            
-            {/* Loading indicator when fetching the next set */}
-            {isLoading && totalGenerated > 0 && isAiQuiz && (
-                 <div className="text-center p-4 bg-yellow-100 text-yellow-800 rounded-xl flex items-center justify-center">
-                    <Loader size="h-6 w-6" color="text-yellow-800"/>
-                    <p className="ml-3 font-semibold">
-                        Agale 10 sawal AI se banaye ja rahe hain... (Generating next 10 questions...)
-                    </p>
-                 </div>
-            )}
-        </div>
-    );
-};
-
-/**
- * PYQ Management Tab (for uploading/deleting data)
- */
-const PyqManager = ({ db, userId, isAuthReady, pyqTopics, setError }) => {
-    const [jsonInput, setJsonInput] = useState('');
-    const [uploadTopic, setUploadTopic] = useState('');
-    const [uploadYear, setUploadYear] = useState('');
-    const [uploading, setUploading] = useState(false);
-
-    const handleUpload = async () => {
-        if (!db || !userId || !jsonInput.trim()) {
-            setError("Kripya Questions ka JSON data daalein aur ensure karein ki aap signed in hain. (Please enter JSON question data and ensure you are signed in.)");
-            return;
-        }
-        
-        if (!uploadTopic.trim() || !uploadYear.trim()) {
-            setError("Kripya Topic (Subject) aur Year dono bharein. (Please fill both Topic and Year.)");
-            return;
+            setState({ totalQuizData: processedPyqData, isLoading: false, currentSetIndex: 0 }); 
         }
 
-        setUploading(true);
-        setError(null);
+        async function handleNext() {
+            const totalGenerated = appState.totalQuizData.length;
+            const hasNextLoadedSet = appState.currentSetIndex + questionsPerPage < totalGenerated;
+            const isCurrentQuizPyq = appState.totalQuizData.length > 0 && appState.totalQuizData[0].isPyq;
+            const isAiQuiz = appState.totalQuizData.length > 0 && !isCurrentQuizPyq;
+            const needsNewFetch = isAiQuiz && (appState.currentSetIndex + questionsPerPage === totalGenerated);
 
-        try {
-            // 1. Parse JSON from textarea (should now only contain the questions array)
-            const questionsArray = JSON.parse(jsonInput);
-            
-            // 2. Validate the questions array
-            if (!Array.isArray(questionsArray)) {
-                setError("JSON data galat hai. Kripya ensure karein ki aapne sirf questions ka array ([{...}, {...}]) paste kiya hai.");
-                setUploading(false);
+            // 1. If next set is loaded (PYQ or AI), just advance index
+            if (hasNextLoadedSet) {
+                setState({ 
+                    currentSetIndex: appState.currentSetIndex + questionsPerPage, 
+                    showResult: false, 
+                    error: null 
+                });
+                window.scrollTo({ top: 0, behavior: 'smooth' });
                 return;
             }
             
-            // 3. Prepare data for upload
-            const item = {
-                topic: uploadTopic.trim(),
-                year: uploadYear.trim(),
-                questions: questionsArray
-            };
+            // 2. If AI Quiz needs new fetch
+            if (needsNewFetch) {
+                setState({ isLoading: true, error: null });
 
-            // Document ID structure: topic-year-randomID
-            const docId = `${item.topic.toLowerCase().replace(/\s/g, '-')}-${item.year}-${crypto.randomUUID().substring(0, 8)}`;
-            const pyqDocRef = doc(db, `artifacts/${appId}/users/${userId}/pyqs`, docId);
-            
-            // 4. Store the data
-            await setDoc(pyqDocRef, {
-                topic: item.topic,
-                year: item.year,
-                questions: item.questions,
-                uploadedAt: serverTimestamp(),
-                docId: docId
-            });
+                try {
+                    const newQuestions = await callGeminiApi(appState.topic.trim(), questionsPerPage, totalGenerated);
+                    
+                    const processedData = newQuestions.map((q, idx) => ({ 
+                        ...q, tempId: totalGenerated + idx, isPyq: false,
+                    }));
+                    
+                    setState({ 
+                        totalQuizData: [...appState.totalQuizData, ...processedData],
+                        currentSetIndex: totalGenerated, // Move view index to the new set
+                        showResult: false
+                    });
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                } catch (e) {
+                    console.error(e);
+                    setState({ error: `Agla set generate nahi ho paya. Kripya dobara koshish karein. Error: ${e.message}` });
+                } finally {
+                    setState({ isLoading: false });
+                }
+            }
+        }
+        
+        // --- PYQ MANAGER HANDLERS ---
+        async function handlePyqUpload(topic, year, jsonInput) {
+            if (!db || !appState.userId || !jsonInput.trim()) {
+                setState({ error: "Kripya Questions ka JSON data daalein aur ensure karein ki aap signed in hain." });
+                return;
+            }
+            if (!topic.trim() || !year.trim()) {
+                setState({ error: "Kripya Topic (Subject) aur Year dono bharein." });
+                return;
+            }
 
-            setJsonInput('');
-            setUploadTopic('');
-            setUploadYear('');
-            
-            // Custom modal for success instead of alert
-            if (window.showCustomModal) {
-                 window.showCustomModal({
+            setState({ isLoading: true, error: null });
+
+            try {
+                const questionsArray = JSON.parse(jsonInput);
+                if (!Array.isArray(questionsArray)) {
+                    throw new Error("JSON data galat hai. Kripya ensure karein ki aapne sirf questions ka array ([{...}, {...}]) paste kiya hai.");
+                }
+                
+                const item = { topic: topic.trim(), year: year.trim(), questions: questionsArray };
+                const docId = `${item.topic.toLowerCase().replace(/\s/g, '-')}-${item.year}-${crypto.randomUUID().substring(0, 8)}`;
+                const pyqDocRef = doc(db, `artifacts/${appId}/users/${appState.userId}/pyqs`, docId);
+                
+                await setDoc(pyqDocRef, {
+                    topic: item.topic, year: item.year, questions: item.questions, 
+                    uploadedAt: serverTimestamp(), docId: docId
+                });
+
+                document.getElementById('upload-topic').value = '';
+                document.getElementById('upload-year').value = '';
+                document.getElementById('json-input').value = '';
+
+                // Show custom modal
+                showCustomModal({
                     title: 'Successfully Uploaded (सफलतापूर्वक अपलोड)',
                     message: `PYQs for Topic: ${item.topic} (Year: ${item.year}) safaltapoorvak upload ho gaye hain.`
                 });
-            } else {
-                 console.log("PYQs successfully uploaded!");
+            } catch (e) {
+                console.error("PYQ Upload Error:", e);
+                setState({ error: `Data upload nahi ho paya. JSON format check karein. Error: ${e.message}` });
+            } finally {
+                setState({ isLoading: false });
             }
-           
-        } catch (e) {
-            console.error("PYQ Upload Error:", e);
-            setError(`Data upload nahi ho paya. JSON format check karein. Error: ${e.message}`);
-        } finally {
-            setUploading(false);
         }
-    };
-    
-    const handleDelete = async (docId, topic) => {
-        // Custom confirmation logic
-        const confirmDelete = window.confirm ? window.confirm(`Kya aap nishchit roop se '${topic}' ko delete karna chahte hain? (Are you sure you want to delete '${topic}'?)`) : true;
-        
-        if (!db || !userId || !confirmDelete) return;
 
-        try {
-            const pyqDocRef = doc(db, `artifacts/${appId}/users/${userId}/pyqs`, docId);
-            await deleteDoc(pyqDocRef);
-        } catch (e) {
-            console.error("Delete Error:", e);
-            setError(`Delete nahi ho paya: ${e.message}`);
-        }
-    };
-
-    return (
-        <div className="space-y-6">
-            <h2 className="text-3xl font-bold text-gray-900 mb-6 flex items-center">
-                <BookOpenText className="w-6 h-6 mr-3 text-indigo-600"/>
-                PYQ Questions Add/Delete Karein
-            </h2>
-
-            <p className="text-gray-600 text-sm italic mb-4">
-                Yahan aap naye PYQ sets (Topic aur Year ke saath) upload kar sakte hain ya existing sets ko delete kar sakte hain.
-            </p>
-
-            <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-100">
-                <h3 className="text-xl font-semibold mb-3 text-gray-800 flex items-center">
-                    <Upload className="w-5 h-5 mr-2 text-indigo-500"/>
-                    Naye PYQ Questions Upload Karein
-                </h3>
-
-                {/* Input Fields for Topic and Year */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                    <input
-                        type="text"
-                        placeholder="Topic/Subject ka naam (e.g., Physics, History)"
-                        value={uploadTopic}
-                        onChange={(e) => setUploadTopic(e.target.value)}
-                        className="p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                        disabled={uploading || !isAuthReady}
-                    />
-                    <input
-                        type="text"
-                        placeholder="Year (e.g., 2022, 2019)"
-                        value={uploadYear}
-                        onChange={(e) => setUploadYear(e.target.value)}
-                        className="p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                        disabled={uploading || !isAuthReady}
-                    />
-                </div>
-                
-                <textarea
-                    placeholder='Yahan sirf Questions ka JSON Array paste karein ([{...}, {...}, ...])'
-                    rows="8"
-                    value={jsonInput}
-                    onChange={(e) => setJsonInput(e.target.value)}
-                    className="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
-                    disabled={uploading || !isAuthReady}
-                />
-                
-                <button
-                    onClick={handleUpload}
-                    disabled={uploading || !jsonInput.trim() || !uploadTopic.trim() || !uploadYear.trim() || !isAuthReady}
-                    className="w-full px-6 py-3 mt-4 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 transition duration-300 shadow-md disabled:opacity-50 flex items-center justify-center"
-                >
-                    {uploading && <Loader />}
-                    {uploading ? 'Uploading...' : 'Upload PYQs Karein'}
-                </button>
-            </div>
+        async function handlePyqDelete(docId, topic) {
+            const confirmDelete = window.confirm(`Kya aap nishchit roop se '${topic}' ko delete karna chahte hain? (Are you sure you want to delete '${topic}'?)`);
             
-            <div className="bg-gray-50 p-4 rounded-xl shadow-inner overflow-x-auto">
-                <h4 className="font-bold text-sm text-gray-600 mb-2">JSON Array Example (Sirf Questions ka array)</h4>
-                <pre className="text-xs text-gray-700 whitespace-pre-wrap">
-                    {`
-[
+            if (!db || !appState.userId || !confirmDelete) return;
+
+            try {
+                const pyqDocRef = doc(db, `artifacts/${appId}/users/${appState.userId}/pyqs`, docId);
+                await deleteDoc(pyqDocRef);
+            } catch (e) {
+                console.error("Delete Error:", e);
+                setState({ error: `Delete nahi ho paya: ${e.message}` });
+            }
+        }
+
+        // --- RENDERING COMPONENTS (JSX to HTML String) ---
+        
+        const QuizQuestion = (question, index) => {
+            const qIndex = index;
+            const isSubmitted = appState.showResult;
+            const userAnswers = appState.userAnswers;
+            const selectedOptionIndex = userAnswers[qIndex];
+
+            const isCurrentQuizPyq = appState.totalQuizData.length > 0 && appState.totalQuizData[0].isPyq;
+
+            const isCorrect = isSubmitted && selectedOptionIndex === question.correct_answer_index;
+            const isIncorrect = isSubmitted && selectedOptionIndex !== null && selectedOptionIndex !== question.correct_answer_index;
+
+            // Options HTML generation
+            const optionsHtml = [0, 1, 2, 3].map((idx) => {
+                const isSelected = selectedOptionIndex === idx;
+                const isCorrectOption = question.correct_answer_index === idx;
+
+                let className = "p-3 rounded-lg border cursor-pointer transition duration-200 flex items-center quiz-option";
+                
+                if (isSubmitted) {
+                    if (isCorrectOption) {
+                        className += " bg-emerald-100 border-emerald-500 text-emerald-800 font-medium";
+                    } else if (isSelected && isIncorrect) {
+                        className += " bg-red-100 border-red-500 text-red-800 font-medium line-through";
+                    } else {
+                        className += " bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100";
+                    }
+                } else {
+                    className += isSelected 
+                        ? " bg-indigo-50 border-indigo-500 text-indigo-700 font-medium" 
+                        : " bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100";
+                }
+
+                return `
+                    <div data-index="${idx}" data-qindex="${qIndex}" class="${className}" >
+                        <span class="w-5 h-5 mr-3 text-center font-bold">
+                            ${String.fromCharCode(65 + idx)}
+                        </span>
+                        <div>
+                            <p class="font-medium text-gray-900">${question.options_en[idx]}</p>
+                            <p class="text-sm text-gray-500 italic">${question.options_hi[idx]}</p>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            // Explanation HTML generation (conditional based on isPyqQuiz)
+            const explanationHtml = isSubmitted ? `
+                <div class="mt-5 p-4 rounded-xl ${isCorrect ? 'bg-emerald-50' : isIncorrect ? 'bg-red-50' : 'bg-gray-50'} border-l-4 ${isCorrect ? 'border-emerald-600' : isIncorrect ? 'border-red-600' : 'border-gray-300'}">
+                    <h4 class="font-bold text-sm mb-2 ${isCorrect ? 'text-emerald-700' : 'text-red-700'}">
+                        ${isCorrect ? 'Correct Answer! (सही जवाब!)' : 'Incorrect Answer. (गलत जवाब.)'}
+                    </h4>
+                    
+                    ${!isCurrentQuizPyq ? `
+                        <p class="text-sm text-gray-700">
+                            <span class="font-semibold text-indigo-600">Explanation (व्याख्या): </span>
+                            ${question.explanation_en}
+                        </p>
+                        <p class="text-sm text-gray-700 mt-1 italic">
+                            ${question.explanation_hi}
+                        </p>
+                    ` : `
+                        <p class="text-sm text-gray-500 italic mt-1">
+                            (PYQ mode mein explanation chhupa hua hai.)
+                        </p>
+                    `}
+                </div>
+            ` : '';
+
+
+            return `
+                <div class="bg-white p-6 rounded-xl shadow-lg mb-6 border border-gray-100">
+                    <p class="text-lg font-semibold text-gray-800 mb-1">
+                        <span class="text-indigo-600 mr-2">Q${index + 1}.</span> ${question.question_en} 
+                    </p>
+                    <p class="text-base text-gray-600 mb-4 italic">
+                        ${question.question_hi}
+                    </p>
+
+                    <div class="space-y-3">
+                        ${optionsHtml}
+                    </div>
+                    ${explanationHtml}
+                </div>
+            `;
+        };
+
+        const TeacherLogin = () => `
+            <div class="bg-white p-6 rounded-xl shadow-lg border-l-4 border-red-500 space-y-4">
+                <h3 class="text-2xl font-bold text-red-700">
+                    Teacher Login Zaroori Hai (Required)
+                </h3>
+                <p class="text-gray-600">
+                    PYQ data add/delete karne ki suvidha sirf teacher ke liye surakshit hai. Kripya Admin Key daalein.
+                </p>
+                <div class="flex flex-col sm:flex-row gap-4">
+                    <input
+                        type="password"
+                        id="admin-key-input"
+                        placeholder="Admin Key Daalein"
+                        value="${appState.adminKeyInput}"
+                        class="flex-1 p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                    />
+                    <button
+                        id="login-button"
+                        class="px-6 py-3 bg-red-600 text-white font-semibold rounded-xl hover:bg-red-700 transition duration-300 shadow-md"
+                    >
+                        Login
+                    </button>
+                </div>
+            </div>
+        `;
+
+        const PyqManager = () => {
+            const { pyqTopics, isLoading, isAuthReady } = appState;
+            
+            const uploadedTopicsHtml = pyqTopics.length === 0 ? `
+                <p class="p-4 bg-yellow-50 text-yellow-800 border border-yellow-200 rounded-xl">
+                    Koi PYQ data abhi tak upload nahi hua hai.
+                </p>
+            ` : pyqTopics.map((topicData) => `
+                <div class="flex justify-between items-center bg-white p-4 rounded-xl shadow-md border border-gray-100">
+                    <div>
+                        <p class="font-semibold text-lg text-indigo-600">${topicData.topic}</p>
+                        <p class="text-sm text-gray-500">
+                            Saal: ${topicData.year} | Sawal: ${topicData.questions.length}
+                        </p>
+                    </div>
+                    <button 
+                        data-doc-id="${topicData.id}"
+                        data-topic="${topicData.topic}"
+                        class="px-3 py-1 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600 transition duration-200 pyq-delete-btn"
+                    >
+                        Delete
+                    </button>
+                </div>
+            `).join('');
+
+            return `
+                <div class="space-y-6">
+                    <h2 class="text-3xl font-bold text-gray-900 mb-6 flex items-center">
+                        ${Icon.BookOpenText('w-6 h-6 mr-3 text-indigo-600')}
+                        PYQ Questions Add/Delete Karein
+                    </h2>
+
+                    <p class="text-gray-600 text-sm italic mb-4">
+                        Yahan aap naye PYQ sets (Topic aur Year ke saath) upload kar sakte hain ya existing sets ko delete kar sakte hain.
+                    </p>
+
+                    <div class="bg-white p-6 rounded-xl shadow-lg border border-gray-100">
+                        <h3 class="text-xl font-semibold mb-3 text-gray-800 flex items-center">
+                            ${Icon.Upload('w-5 h-5 mr-2 text-indigo-500')}
+                            Naye PYQ Questions Upload Karein
+                        </h3>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            <input
+                                type="text"
+                                id="upload-topic"
+                                placeholder="Topic/Subject ka naam (e.g., Physics, History)"
+                                class="p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                                ${isLoading || !isAuthReady ? 'disabled' : ''}
+                            />
+                            <input
+                                type="text"
+                                id="upload-year"
+                                placeholder="Year (e.g., 2022, 2019)"
+                                class="p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                                ${isLoading || !isAuthReady ? 'disabled' : ''}
+                            />
+                        </div>
+                        
+                        <textarea
+                            id="json-input"
+                            placeholder='Yahan sirf Questions ka JSON Array paste karein ([{...}, {...}, ...])'
+                            rows="8"
+                            class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
+                            ${isLoading || !isAuthReady ? 'disabled' : ''}
+                        ></textarea>
+                        
+                        <button
+                            id="upload-button"
+                            class="w-full px-6 py-3 mt-4 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 transition duration-300 shadow-md ${isLoading || !isAuthReady ? 'opacity-50' : ''} flex items-center justify-center"
+                            ${isLoading || !isAuthReady ? 'disabled' : ''}
+                        >
+                            ${isLoading ? Icon.Loader() : ''}
+                            ${isLoading ? 'Uploading...' : 'Upload PYQs Karein'}
+                        </button>
+                    </div>
+                    
+                    <div class="bg-gray-50 p-4 rounded-xl shadow-inner overflow-x-auto">
+                        <h4 class="font-bold text-sm text-gray-600 mb-2">JSON Array Example (Sirf Questions ka array)</h4>
+                        <pre class="text-xs text-gray-700 whitespace-pre-wrap">
+                            [
     {
         "question_en": "Who is the Father of the Indian Constitution?",
         "question_hi": "भारतीय संविधान के जनक कौन हैं?",
@@ -818,218 +620,350 @@ const PyqManager = ({ db, userId, isAuthReady, pyqTopics, setError }) => {
         "explanation_en": "Dr. B.R. Ambedkar headed the Drafting Committee.",
         "explanation_hi": "डॉ. बी.आर. अम्बेडकर ने मसौदा समिति का नेतृत्व किया।"
     },
-    {
-        "question_en": "What is the capital of France?",
-        "question_hi": "फ्रांस की राजधानी क्या है?",
-        "options_en": ["Berlin", "Madrid", "Paris", "Rome"],
-        "options_hi": ["बर्लिन", "मैड्रिड", "पेरिस", "रोम"],
-        "correct_answer_index": 2,
-        "explanation_en": "Paris is the capital and largest city of France.",
-        "explanation_hi": "पेरिस फ्रांस की राजधानी और सबसे बड़ा शहर है।"
-    }
     // ... aur sawal yahan daalein
 ]
-`}
-                </pre>
-            </div>
+                        </pre>
+                    </div>
 
-            <h3 className="text-2xl font-bold text-gray-900 mt-8 mb-4">
-                Aapke Uploaded Topics
-            </h3>
+                    <h3 class="text-2xl font-bold text-gray-900 mt-8 mb-4">
+                        Aapke Uploaded Topics
+                    </h3>
+                    
+                    <div class="space-y-3">
+                        ${uploadedTopicsHtml}
+                    </div>
+                </div>
+            `;
+        };
+        
+        const AiQuizGenerator = () => {
+            const { totalQuizData, isLoading, topic, pyqTopics, showResult, currentSetIndex } = appState;
             
-            <div className="space-y-3">
-                {pyqTopics.length === 0 ? (
-                    <p className="p-4 bg-yellow-50 text-yellow-800 border border-yellow-200 rounded-xl">
-                        Koi PYQ data abhi tak upload nahi hua hai.
+            const currentQuestions = totalQuizData.slice(currentSetIndex, currentSetIndex + questionsPerPage);
+            const totalGenerated = totalQuizData.length;
+            const isCurrentQuizPyq = totalQuizData.length > 0 && totalQuizData[0].isPyq; 
+            const isAiQuiz = totalQuizData.length > 0 && !isCurrentQuizPyq;
+            const isPyqQuizComplete = isCurrentQuizPyq && (currentSetIndex + questionsPerPage >= totalGenerated);
+
+            let generateButtonText = (totalGenerated > 0) ? 'Naya Topic Shuru Karein' : 'Quiz Shuru Karein (10 Sawal)';
+            if (isLoading && totalGenerated === 0) {
+                generateButtonText = 'Questions Ban Rahe Hain...';
+            } 
+            
+            const pyqOptionsHtml = pyqTopics.length === 0 ? `
+                <p class="text-gray-600">
+                    Aapne abhi tak koi PYQ data upload nahi kiya hai. Kripya pehle <strong>"PYQ Questions Add/Delete Karein"</strong> tab mein jaakar apne sawal upload karein.
+                </p>
+            ` : `
+                <div class="flex flex-col md:flex-row gap-4">
+                    <select
+                        id="pyq-select"
+                        class="flex-1 p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 bg-white"
+                        ${isLoading ? 'disabled' : ''}
+                    >
+                        <option value="">--- Topic aur Saal (Year) Chunein ---</option>
+                        ${pyqTopics.map((item) => `<option value="${item.id}" ${item.id === appState.selectedPyqTopicId ? 'selected' : ''}>
+                            ${item.topic} (Year: ${item.year}, Sawal: ${item.questions.length})
+                        </option>`).join('')}
+                    </select>
+                    <button
+                        id="load-pyq-button"
+                        class="md:w-auto w-full px-6 py-3 bg-emerald-600 text-white font-semibold rounded-xl hover:bg-emerald-700 transition duration-300 shadow-md ${isLoading || !appState.selectedPyqTopicId ? 'opacity-50' : ''} flex items-center justify-center"
+                        ${isLoading || !appState.selectedPyqTopicId ? 'disabled' : ''}
+                    >
+                        Load PYQ Quiz
+                    </button>
+                </div>
+            `;
+
+            const scoreHtml = showResult ? `
+                <div class="bg-white p-6 rounded-xl shadow-xl border-t-4 border-indigo-600 text-center">
+                    <h3 class="text-3xl font-extrabold text-indigo-600 mb-2">
+                        Your Score (Aapka Score)
+                    </h3>
+                    <p class="text-5xl font-black text-gray-900">
+                        ${calculateScore().correctCount} / ${calculateScore().totalCount}
                     </p>
-                ) : (
-                    pyqTopics.map((topicData) => (
-                        <div key={topicData.id} className="flex justify-between items-center bg-white p-4 rounded-xl shadow-md border border-gray-100">
-                            <div>
-                                <p className="font-semibold text-lg text-indigo-600">{topicData.topic}</p>
-                                <p className="text-sm text-gray-500">
-                                    Saal: {topicData.year} | Sawal: {topicData.questions.length}
-                                </p>
-                            </div>
-                            <button 
-                                onClick={() => handleDelete(topicData.id, topicData.topic)}
-                                className="px-3 py-1 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600 transition duration-200"
-                            >
-                                Delete
-                            </button>
+                    <p class="mt-2 text-lg text-gray-600">
+                        Great job! Aapne ${calculateScore().correctCount} sawalon ka sahi jawab diya.
+                    </p>
+                </div>
+            ` : '';
+
+            const questionsHtml = currentQuestions.map((q, index) => QuizQuestion(q, currentSetIndex + index)).join('');
+
+            const actionButtonsHtml = currentQuestions.length > 0 ? `
+                <div class="flex justify-between items-center pt-4">
+                    ${!showResult ? `
+                        <button id="submit-button" class="px-8 py-3 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-700 transition duration-300 shadow-lg text-lg">
+                            Submit Karein (Submit)
+                        </button>
+                    ` : ''}
+
+                    ${showResult && !isPyqQuizComplete ? `
+                        <button
+                            id="next-button"
+                            class="px-8 py-3 bg-sky-600 text-white font-bold rounded-xl hover:bg-sky-700 transition duration-300 shadow-lg text-lg ${isLoading ? 'opacity-50' : ''} flex items-center"
+                            ${isLoading ? 'disabled' : ''}
+                        >
+                            ${isLoading ? Icon.Loader('h-6 w-6') : ''}
+                            ${isLoading ? 'Generating Next Set...' : 'Start Next 10 Questions'}
+                        </button>
+                    ` : ''}
+
+                    ${showResult && isPyqQuizComplete ? `
+                        <p class="text-lg font-semibold text-emerald-700">
+                            PYQ set complete ho gaya hai! Naya set chunein.
+                        </p>
+                    ` : ''}
+                </div>
+            ` : '';
+
+
+            return `
+                <div class="space-y-6">
+                    <h2 class="text-3xl font-bold text-gray-900 mb-6 flex items-center">
+                        ${Icon.Zap('w-6 h-6 mr-3 text-indigo-600')}
+                        AI Quiz Generator
+                    </h2>
+
+                    <!-- AI Quiz Generation Section -->
+                    <div class="bg-white p-6 rounded-xl shadow-lg flex flex-col md:flex-row gap-4">
+                        <input
+                            type="text"
+                            id="topic-input"
+                            placeholder="Topic ka naam daalein (e.g., MS Excel, Photosynthesis)"
+                            value="${topic}"
+                            class="flex-1 p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                            ${isLoading ? 'disabled' : ''}
+                        />
+                        <button
+                            id="generate-button"
+                            class="md:w-auto w-full px-6 py-3 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 transition duration-300 shadow-md ${isLoading || !topic.trim() ? 'opacity-50' : ''} flex items-center justify-center"
+                            ${isLoading || !topic.trim() ? 'disabled' : ''}
+                        >
+                            ${isLoading && totalGenerated === 0 ? Icon.Loader() : ''}
+                            ${generateButtonText}
+                        </button>
+                    </div>
+                    
+                    <!-- PYQ Selection Section (Visible only when no quiz is running) -->
+                    ${totalGenerated === 0 ? `
+                        <div class="bg-white p-6 rounded-xl shadow-lg border-t-4 border-emerald-500 space-y-4">
+                            <h3 class="text-xl font-bold text-emerald-700 flex items-center">
+                                ${Icon.Library('w-5 h-5 mr-2')}
+                                Ya Phir, Previous Year Question (PYQ) Load Karein
+                            </h3>
+                            ${pyqOptionsHtml}
                         </div>
-                    ))
-                )}
-            </div>
-             {/* Custom Modal Placeholder (to replace alert/confirm) */}
-             <div id="custom-modal-container"></div>
-             <script dangerouslySetInnerHTML={{ __html: `
-                window.showCustomModal = ({ title, message }) => {
-                    const container = document.getElementById('custom-modal-container');
-                    const modal = document.createElement('div');
-                    modal.className = 'fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50';
-                    modal.innerHTML = \`
-                        <div class="bg-white p-6 rounded-xl shadow-2xl max-w-sm w-full">
-                            <h3 class="text-xl font-bold text-indigo-600 mb-3">\${title}</h3>
-                            <p class="text-gray-700 mb-4">\${message}</p>
-                            <button id="modal-close" class="w-full py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">Close</button>
+                    ` : ''}
+                    
+                    ${totalGenerated > 0 ? `
+                        <div class="text-center p-3 rounded-xl shadow-sm font-medium ${isAiQuiz ? 'bg-indigo-50 text-indigo-700' : 'bg-emerald-50 text-emerald-700'}">
+                            ${isAiQuiz ? 'AI Quiz Active' : `PYQ Quiz Active: ${totalQuizData[0].topic} (${totalQuizData[0].year})`}
+                            . Total Questions: ${totalGenerated}. Currently Showing: ${currentSetIndex + 1} - ${Math.min(currentSetIndex + questionsPerPage, totalGenerated)}
                         </div>
-                    \`;
-                    container.appendChild(modal);
-                    document.getElementById('modal-close').onclick = () => container.removeChild(modal);
-                };
-             `}}></script>
-        </div>
-    );
-};
+                    ` : ''}
 
-// --- MAIN APP COMPONENT ---
+                    ${currentQuestions.length > 0 ? `
+                        ${scoreHtml}
+                        ${questionsHtml}
+                        ${actionButtonsHtml}
+                    ` : ''}
+                    
+                    ${isLoading && totalGenerated > 0 && isAiQuiz ? `
+                        <div class="text-center p-4 bg-yellow-100 text-yellow-800 rounded-xl flex items-center justify-center">
+                            ${Icon.Loader('h-6 w-6', 'text-yellow-800')}
+                            <p class="ml-3 font-semibold">
+                                Agale 10 sawal AI se banaye ja rahe hain... (Generating next 10 questions...)
+                            </p>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        };
 
-const App = () => {
-    const [activeTab, setActiveTab] = useState('ai'); // 'ai' or 'pyq'
-    const [isLoading, setIsLoading] = useState(false);
-    const [error, setError] = useState(null);
-    
-    // State to hold all generated questions from AI
-    const [totalQuizData, setTotalQuizData] = useState([]);
-    
-    // Admin Control States
-    const [adminKeyInput, setAdminKeyInput] = useState('');
-    const [isTeacher, setIsTeacher] = useState(false); // New state to control access
-    
-    // Firebase Hook
-    const { db, userId, isAuthReady } = useFirebaseSetup();
-    
-    // PYQ Data Hook
-    const pyqTopics = usePYQData(db, userId, isAuthReady, setError);
+        function calculateScore() {
+            let correctCount = 0;
+            const currentSetStart = appState.currentSetIndex;
+            const currentSetEnd = currentSetStart + questionsPerPage;
 
-    // --- NEW ADMIN LOGIN LOGIC ---
-    const handleAdminLogin = () => {
-        if (adminKeyInput === TEACHER_ADMIN_KEY) {
-            setIsTeacher(true);
-            setError(null);
-            setAdminKeyInput('');
-            // Move to PYQ tab automatically if successful
-            setActiveTab('pyq'); 
-        } else {
-            setError("Admin Key galat hai. Kripya sahi key daalein. (Incorrect Admin Key. Please enter the correct key.)");
-            setIsTeacher(false);
-            setAdminKeyInput('');
+            for (let i = currentSetStart; i < currentSetEnd && i < appState.totalQuizData.length; i++) {
+                const question = appState.totalQuizData[i];
+                if (appState.userAnswers[i] === question?.correct_answer_index) {
+                    correctCount++;
+                }
+            }
+            return { correctCount, totalCount: Math.min(questionsPerPage, appState.totalQuizData.length - currentSetStart) };
         }
-    };
-    // ----------------------------
 
-    return (
-        <div className="min-h-screen bg-gray-100 p-4 md:p-8 font-['Inter']">
-            <div className="max-w-4xl mx-auto">
-                <header className="text-center mb-8">
-                    <h1 className="text-5xl font-extrabold text-gray-900 leading-tight">
-                        <span className="text-indigo-600">Teacher's</span> Quiz App
+        const MainApp = () => {
+            const { activeTab, isTeacher, error, isAuthReady, userId } = appState;
+
+            // Header and Error Display
+            const headerHtml = `
+                <header class="text-center mb-8">
+                    <h1 class="text-5xl font-extrabold text-gray-900 leading-tight">
+                        <span class="text-indigo-600">Teacher's</span> Quiz App
                     </h1>
-                    <p className="text-xl text-gray-500 mt-2">
+                    <p class="text-xl text-gray-500 mt-2">
                         AI-Powered & PYQ Management Tool (AI-आधारित और PYQ प्रबंधन उपकरण)
                     </p>
-                    {isAuthReady && userId && (
-                         <div className="mt-4 text-xs text-gray-500 p-2 bg-white rounded-lg shadow-sm">
-                            <span className="font-medium text-indigo-600">User ID:</span> {userId}
+                    ${isAuthReady && userId ? `
+                         <div class="mt-4 text-xs text-gray-500 p-2 bg-white rounded-lg shadow-sm">
+                            <span class="font-medium text-indigo-600">User ID:</span> ${userId}
                         </div>
-                    )}
+                    ` : ''}
                 </header>
+            `;
 
-                {/* Error Banner */}
-                {error && (
-                    <div className="mb-6 p-4 bg-red-100 border-l-4 border-red-500 text-red-700 rounded-lg flex items-start">
-                        <AlertTriangle className="w-5 h-5 mr-3 mt-1 flex-shrink-0"/>
-                        <div>
-                            <p className="font-bold">Error:</p>
-                            <p>{error}</p>
-                        </div>
+            const errorHtml = error ? `
+                <div class="mb-6 p-4 bg-red-100 border-l-4 border-red-500 text-red-700 rounded-lg flex items-start">
+                    ${Icon.AlertTriangle('w-5 h-5 mr-3 mt-1 flex-shrink-0')}
+                    <div>
+                        <p class="font-bold">Error:</p>
+                        <p>${error}</p>
                     </div>
-                )}
+                </div>
+            ` : '';
 
-                {/* Tab Navigation */}
-                <div className="flex bg-white rounded-xl shadow-lg mb-8 p-1">
+            // Tab Navigation
+            const tabNavHtml = `
+                <div class="flex bg-white rounded-xl shadow-lg mb-8 p-1">
                     <button
-                        onClick={() => setActiveTab('ai')}
-                        className={`flex-1 px-4 py-3 text-lg font-semibold rounded-xl transition duration-300 flex items-center justify-center ${
+                        id="tab-ai"
+                        data-tab="ai"
+                        class="flex-1 px-4 py-3 text-lg font-semibold rounded-xl transition duration-300 flex items-center justify-center ${
                             activeTab === 'ai'
                                 ? 'bg-indigo-600 text-white shadow-md'
                                 : 'text-gray-600 hover:bg-gray-50'
-                        }`}
+                        }"
                     >
-                        <Zap className="w-5 h-5 mr-2"/>
+                        ${Icon.Zap('w-5 h-5 mr-2')}
                         AI Quiz (Continuous Generation)
                     </button>
 
-                    {/* PYQ Manager Tab - Now Always Clickable */}
                     <button
-                        onClick={() => setActiveTab('pyq')}
-                        className={`flex-1 px-4 py-3 text-lg font-semibold rounded-xl transition duration-300 flex items-center justify-center ${
+                        id="tab-pyq"
+                        data-tab="pyq"
+                        class="flex-1 px-4 py-3 text-lg font-semibold rounded-xl transition duration-300 flex items-center justify-center ${
                             activeTab === 'pyq'
                                 ? 'bg-indigo-600 text-white shadow-md'
                                 : 'text-gray-600 hover:bg-gray-50'
-                        }`}
+                        }"
                     >
-                        <BookOpenText className="w-5 h-5 mr-2"/>
+                        ${Icon.BookOpenText('w-5 h-5 mr-2')}
                         PYQ Questions Add/Delete Karein
-                        {!isTeacher && <span className="ml-2 text-xs font-normal opacity-70">(Login Required)</span>}
+                        ${!isTeacher ? `<span class="ml-2 text-xs font-normal opacity-70">(Login Required)</span>` : ''}
                     </button>
                 </div>
+            `;
 
-                {/* Tab Content */}
-                <div className="mb-8">
-                    {activeTab === 'ai' && (
-                        <AiQuizGenerator
-                            totalQuizData={totalQuizData}
-                            setTotalQuizData={setTotalQuizData}
-                            isLoading={isLoading}
-                            setIsLoading={setIsLoading}
-                            setError={setError}
-                            pyqTopics={pyqTopics} // Pass PYQ data to AI Generator
-                        />
-                    )}
+            // Tab Content
+            let tabContent = '';
+            if (activeTab === 'ai') {
+                tabContent = AiQuizGenerator();
+            } else if (activeTab === 'pyq') {
+                tabContent = isTeacher ? PyqManager() : TeacherLogin();
+            }
 
-                    {/* PYQ Manager Content: Requires Teacher Login */}
-                    {activeTab === 'pyq' && (
-                        isTeacher ? (
-                            <PyqManager
-                                db={db}
-                                userId={userId}
-                                isAuthReady={isAuthReady}
-                                pyqTopics={pyqTopics}
-                                setError={setError}
-                            />
-                        ) : (
-                            // Teacher Login Interface
-                            <div className="bg-white p-6 rounded-xl shadow-lg border-l-4 border-red-500 space-y-4">
-                                <h3 className="text-2xl font-bold text-red-700">
-                                    Teacher Login Zaroori Hai (Required)
-                                </h3>
-                                <p className="text-gray-600">
-                                    PYQ data add/delete karne ki suvidha sirf teacher ke liye surakshit hai. Kripya Admin Key daalein.
-                                </p>
-                                <div className="flex flex-col sm:flex-row gap-4">
-                                    <input
-                                        type="password"
-                                        placeholder="Admin Key Daalein"
-                                        value={adminKeyInput}
-                                        onChange={(e) => setAdminKeyInput(e.target.value)}
-                                        className="flex-1 p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500"
-                                    />
-                                    <button
-                                        onClick={handleAdminLogin}
-                                        className="px-6 py-3 bg-red-600 text-white font-semibold rounded-xl hover:bg-red-700 transition duration-300 shadow-md"
-                                    >
-                                        Login
-                                    </button>
-                                </div>
-                            </div>
-                        )
-                    )}
+            return `
+                <div class="max-w-4xl mx-auto">
+                    ${headerHtml}
+                    ${errorHtml}
+                    ${tabNavHtml}
+                    <div class="mb-8">
+                        ${tabContent}
+                    </div>
                 </div>
-            </div>
-        </div>
-    );
-};
+                <!-- Custom Modal Placeholder (to replace alert/confirm) -->
+                <div id="custom-modal-container"></div>
+            `;
+        };
 
-export default App;
+        // --- EVENT LISTENERS AND INITIALIZATION ---
+
+        function attachEventListeners() {
+            // Tab Switching
+            document.getElementById('tab-ai')?.addEventListener('click', () => setState({ activeTab: 'ai' }));
+            document.getElementById('tab-pyq')?.addEventListener('click', () => setState({ activeTab: 'pyq' }));
+
+            // AI Quiz Handlers
+            document.getElementById('topic-input')?.addEventListener('input', (e) => setState({ topic: e.target.value }));
+            document.getElementById('generate-button')?.addEventListener('click', handleGenerate);
+
+            // Quiz interaction
+            document.getElementById('submit-button')?.addEventListener('click', () => setState({ showResult: true }));
+            document.getElementById('next-button')?.addEventListener('click', handleNext);
+            
+            // PYQ Loading
+            document.getElementById('pyq-select')?.addEventListener('change', (e) => setState({ selectedPyqTopicId: e.target.value }));
+            document.getElementById('load-pyq-button')?.addEventListener('click', handlePyqLoad);
+
+
+            // Quiz Option Selection (Delegated event handling)
+            appRoot.querySelectorAll('.quiz-option').forEach(option => {
+                if (!appState.showResult) {
+                    option.addEventListener('click', function() {
+                        const qIndex = parseInt(this.dataset.qindex);
+                        const optionIndex = parseInt(this.dataset.index);
+                        setState({ 
+                            userAnswers: { ...appState.userAnswers, [qIndex]: optionIndex } 
+                        });
+                    });
+                }
+            });
+
+
+            // Teacher Login Handlers
+            if (appState.activeTab === 'pyq' && !appState.isTeacher) {
+                const adminKeyInput = document.getElementById('admin-key-input');
+                adminKeyInput?.addEventListener('input', (e) => setState({ adminKeyInput: e.target.value }));
+                document.getElementById('login-button')?.addEventListener('click', handleAdminLogin);
+                adminKeyInput?.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') handleAdminLogin();
+                });
+            }
+
+            // PYQ Manager Handlers (only for teachers)
+            if (appState.activeTab === 'pyq' && appState.isTeacher) {
+                document.getElementById('upload-button')?.addEventListener('click', () => {
+                    const topic = document.getElementById('upload-topic').value;
+                    const year = document.getElementById('upload-year').value;
+                    const jsonInput = document.getElementById('json-input').value;
+                    handlePyqUpload(topic, year, jsonInput);
+                });
+                
+                appRoot.querySelectorAll('.pyq-delete-btn').forEach(button => {
+                    button.addEventListener('click', function() {
+                        handlePyqDelete(this.dataset.docId, this.dataset.topic);
+                    });
+                });
+            }
+        }
+        
+        // Custom Modal Function (replaces external alerts)
+        window.showCustomModal = ({ title, message }) => {
+            const container = document.getElementById('custom-modal-container');
+            const modal = document.createElement('div');
+            modal.className = 'fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50 p-4';
+            modal.innerHTML = `
+                <div class="bg-white p-6 rounded-xl shadow-2xl max-w-sm w-full">
+                    <h3 class="text-xl font-bold text-indigo-600 mb-3">${title}</h3>
+                    <p class="text-gray-700 mb-4">${message}</p>
+                    <button id="modal-close" class="w-full py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">Band Karein</button>
+                </div>
+            `;
+            container.appendChild(modal);
+            document.getElementById('modal-close').onclick = () => container.removeChild(modal);
+        };
+
+        // Start the application
+        window.onload = async () => {
+            await setupFirebase();
+            render();
+        };
+
+    </script>
+</body>
+</html>
