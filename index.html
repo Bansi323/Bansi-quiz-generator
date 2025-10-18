@@ -13,7 +13,7 @@
         import { getFirestore, collection, getDocs, setDoc, doc, updateDoc, query, arrayUnion, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
         // Global variables ko define karna
-        const firebaseConfig = typeof _firebase_config !== 'undefined' ? JSON.parse(_firebase_config) : {};
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
         window.app = initializeApp(firebaseConfig);
         window.db = getFirestore(window.app);
         window.auth = getAuth(window.app);
@@ -28,7 +28,7 @@
                 } else {
                     await signInAnonymously(window.auth);
                 }
-                document.getElementById('auth-status').innerText = Auth Ready. User ID: ${window.auth.currentUser.uid};
+                document.getElementById('auth-status').innerText = `Auth Ready. User ID: ${window.auth.currentUser.uid}`;
                 document.getElementById('auth-status').classList.add('text-green-600');
                 
                 // Once auth is ready, check if user should see the admin panel
@@ -59,7 +59,7 @@
         <div id="login-gate" class="fixed inset-0 bg-gray-50 flex items-center justify-center z-50 p-4">
             <div class="bg-white p-8 rounded-xl shadow-2xl max-w-sm w-full text-center">
                 <h2 class="text-2xl font-bold text-purple-600 mb-4">Quiz Generator Access</h2>
-                <p class="text-gray-600 mb-6">Kripya shuru karne ke liye *Access Code* daalein.</p>
+                <p class="text-gray-600 mb-6">Kripya shuru karne ke liye **Access Code** daalein.</p>
                 
                 <input type="password" id="access-code-input" placeholder="Access Code" 
                        class="w-full p-3 border border-gray-300 rounded-lg mb-4 focus:ring-purple-500 focus:border-purple-500">
@@ -287,7 +287,7 @@
                 });
                 
                 pyqDataElement.value = '';
-                showModal("Success!", PYQ Data (${data.length} sawal) Safaltapoorvak upload ho gaya hai., false);
+                showModal("Success!", `PYQ Data (${data.length} sawal) Safaltapoorvak upload ho gaya hai.`, false);
 
             } catch (error) {
                 console.error("PYQ Upload Error:", error);
@@ -334,7 +334,7 @@
             document.querySelector('#loading-spinner p').innerText = text;
             
             if (isLoading) {
-                document.getElementById('generate-btn').innerHTML = <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div><span class="ml-3">${text}</span>; 
+                document.getElementById('generate-btn').innerHTML = `<div class="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div><span class="ml-3">${text}</span>`; 
             } else {
                 document.getElementById('generate-btn').innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><path d="M3 3v18h18M3 18l7-7 4 4 8-8"></path></svg>Quiz Generate Karein';
             }
@@ -355,7 +355,7 @@
                 currentTopic = document.getElementById('filter-topic').value.trim() || 'General Knowledge'; 
                 currentQuestionCount = Math.min(50, numQuestionsInput); 
                 document.getElementById('num-questions').value = currentQuestionCount;
-                document.getElementById('next-batch-btn').innerText = Next ${currentQuestionCount} Questions (AI);
+                document.getElementById('next-batch-btn').innerText = `Next ${currentQuestionCount} Questions (AI)`;
             } else {
                 currentQuestionCount = Math.min(150, numQuestionsInput); 
             }
@@ -411,7 +411,7 @@
                     });
                     
                     if (filteredQuestions.length === 0) {
-                        showModal("Badhai Ho!", Aapne is filter (Topic: ${lastPyqFilter.topic || 'All'}, Year: ${lastPyqFilter.year || 'All'}, Exam: ${lastPyqFilter.exam || 'All'}) ke sabhi available sawal poore kar liye hain! Naye filters chunein., false);
+                        showModal("Badhai Ho!", `Aapne is filter (Topic: ${lastPyqFilter.topic || 'All'}, Year: ${lastPyqFilter.year || 'All'}, Exam: ${lastPyqFilter.exam || 'All'}) ke sabhi available sawal poore kar liye hain! Naye filters chunein.`, false);
                         resetQuiz();
                         return;
                     }
@@ -422,14 +422,14 @@
                     quizData = filteredQuestions.sort(() => 0.5 - Math.random()).slice(0, currentQuestionCount);
                     currentQuestionCount = quizData.length;
 
-                    renderQuiz(quizData, PYQ Quiz: ${currentTopic || 'Filtered'} (Remaining: ${availableCount - currentQuestionCount}));
+                    renderQuiz(quizData, `PYQ Quiz: ${currentTopic || 'Filtered'} (Remaining: ${availableCount - currentQuestionCount})`);
 
                 } else {
                     // --- Generate with AI (Same as before) ---
-                    setLoading(true, AI Se ${currentQuestionCount} Sawal Ban Rahe Hain...);
+                    setLoading(true, `AI Se ${currentQuestionCount} Sawal Ban Rahe Hain...`);
                     
                     const systemPrompt = "You are a quiz generation expert. Your task is to generate a multiple-choice quiz based on the user's topic. For each question, provide 4 options and the single correct answer. The questions, options, and correct answers MUST be provided in Hinglish (Hindi written in Latin script, often mixed with English words). The questions should be completely different from any previous batch.";
-                    const userQuery = Generate a fresh, unique quiz with exactly ${currentQuestionCount} questions on the topic: '${currentTopic}'. The language must be Hinglish.;
+                    const userQuery = `Generate a fresh, unique quiz with exactly ${currentQuestionCount} questions on the topic: '${currentTopic}'. The language must be Hinglish.`;
 
                     const payload = {
                         contents: [{ parts: [{ text: userQuery }] }],
@@ -482,7 +482,7 @@
             const quizForm = document.getElementById('quiz-form');
             quizForm.innerHTML = '';
             
-            document.getElementById('status-message').innerText = ${topic} par ${data.length} sawalon ka quiz tayaar hai!;
+            document.getElementById('status-message').innerText = `${topic} par ${data.length} sawalon ka quiz tayaar hai!`;
             document.getElementById('status-message').classList.remove('hidden');
             quizForm.classList.remove('hidden');
             document.getElementById('submit-btn').classList.remove('hidden');
@@ -521,9 +521,9 @@
             const attemptedHashesThisSession = [];
 
             quizData.forEach((q, index) => {
-                const selectedOption = document.querySelector(input[name="q${index}"]:checked);
-                const questionElement = document.getElementById(question-${index});
-                const feedbackElement = document.getElementById(feedback-${index});
+                const selectedOption = document.querySelector(`input[name="q${index}"]:checked`);
+                const questionElement = document.getElementById(`question-${index}`);
+                const feedbackElement = document.getElementById(`feedback-${index}`);
                 
                 // Add question hash for saving progress
                 attemptedHashesThisSession.push(getQuestionHash(q.question));
@@ -548,7 +548,7 @@
                     
                 } else {
                     questionElement.classList.add('border-red-400', 'bg-red-50');
-                    feedbackElement.innerHTML = ❌ Galat Jawab. Sahi Jawab hai: <span class="font-bold">${q.correct_answer}</span>;
+                    feedbackElement.innerHTML = `❌ Galat Jawab. Sahi Jawab hai: <span class="font-bold">${q.correct_answer}</span>`;
                     feedbackElement.classList.add('text-red-600');
 
                     if(selectedOption) {
@@ -565,14 +565,14 @@
                     await setDoc(progressDocRef, { 
                         attempted_q_hashes: arrayUnion(...attemptedHashesThisSession) 
                     }, { merge: true });
-                    console.log(Successfully saved ${attemptedHashesThisSession.length} PYQ hashes to user progress.);
+                    console.log(`Successfully saved ${attemptedHashesThisSession.length} PYQ hashes to user progress.`);
                 } catch(e) {
                     console.error("Failed to save PYQ progress:", e);
                     showModal("Save Error", "Aapki progress save nahi ho payi. Network check karein.", true);
                 }
             }
             
-            document.getElementById('final-score').innerText = Aapka Score: ${score} out of ${totalQuestions};
+            document.getElementById('final-score').innerText = `Aapka Score: ${score} out of ${totalQuestions}`;
             document.getElementById('score-container').classList.remove('hidden');
             document.getElementById('submit-btn').classList.add('hidden');
         }
