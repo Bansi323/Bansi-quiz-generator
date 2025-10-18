@@ -73,7 +73,7 @@
             </div>
         </div>
 
-Bir Singh, [18-10-2025 10:03]
+
 <!-- Main App Content (Hidden until access code is correct) -->
         <div id="main-app-content">
 
@@ -178,8 +178,6 @@ class="w-full p-3 border border-gray-300 rounded-lg focus:ring-purple-500 focus:
             <button onclick="document.getElementById('notification-modal').classList.add('hidden')" class="w-full bg-red-500 text-white p-3 rounded-lg font-semibold hover:bg-red-600">Close</button>
         </div>
     </div>
-
-Bir Singh, [18-10-2025 10:03]
 <script>
         const API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=";
         const apiKey = ""; 
@@ -266,8 +264,6 @@ Bir Singh, [18-10-2025 10:03]
                 showModal("Error", "Kripya JSON data paste karein.", true);
                 return;
             }
-
-Bir Singh, [18-10-2025 10:03]
 try {
                 const data = JSON.parse(jsonString);
                 if (!Array.isArray(data) || data.length === 0) {
@@ -413,8 +409,6 @@ Bir Singh, [18-10-2025 10:03]
                         const topicMatch = !lastPyqFilter.topic || (tags.topic && tags.topic.toLowerCase().includes(lastPyqFilter.topic));
                         const yearMatch = !lastPyqFilter.year || (tags.year && tags.year.toLowerCase().includes(lastPyqFilter.year));
                         const examMatch = !lastPyqFilter.exam || (tags.exam && tags.exam.toLowerCase().includes(lastPyqFilter.exam));
-
-Bir Singh, [18-10-2025 10:03]
 return topicMatch && yearMatch && examMatch;
                     });
                     
@@ -483,8 +477,6 @@ return topicMatch && yearMatch && examMatch;
             document.getElementById('num-questions').value = currentQuestionCount;
             generateQuiz();
         }
-
-Bir Singh, [18-10-2025 10:03]
 // --- UI Rendering ---
         function renderQuiz(data, topic) {
             const quizForm = document.getElementById('quiz-form');
@@ -559,7 +551,6 @@ Bir Singh, [18-10-2025 10:03]
                     feedbackElement.innerHTML = ❌ Galat Jawab. Sahi Jawab hai: <span class="font-bold">${q.correct_answer}</span>;
                     feedbackElement.classList.add('text-red-600');
 
-Bir Singh, [18-10-2025 10:03]
 if(selectedOption) {
                         selectedOption.closest('label').classList.add('bg-red-300', 'text-red-900');
                     }
@@ -605,4 +596,5 @@ if(selectedOption) {
 
     </script>
 </body>
+
 </html>
