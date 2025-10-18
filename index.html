@@ -82,15 +82,37 @@
         // --- UTILITY FUNCTIONS ---
 
         /** Renders the entire application based on the current appState. */
-        function render() {
+        function render(activeId = null, cursorStart = null, cursorEnd = null) {
             appRoot.innerHTML = MainApp();
             attachEventListeners();
+            
+            // Restore focus and cursor position
+            if (activeId) {
+                const newActiveElement = document.getElementById(activeId);
+                // Check if the new element exists and is a type that can be focused/edited
+                if (newActiveElement && (newActiveElement.tagName === 'INPUT' || newActiveElement.tagName === 'TEXTAREA')) {
+                    newActiveElement.focus();
+                    // Restore cursor position if available
+                    if (cursorStart !== null && cursorEnd !== null) {
+                        newActiveElement.setSelectionRange(cursorStart, cursorEnd);
+                    }
+                }
+            }
         }
 
         /** Sets state and triggers re-render. */
         function setState(updates) {
+            // 1. Capture currently focused element ID and cursor position
+            const activeElement = document.activeElement;
+            const activeId = activeElement?.id;
+            const cursorStart = activeElement?.selectionStart;
+            const cursorEnd = activeElement?.selectionEnd;
+
+            // 2. Update state
             Object.assign(appState, updates);
-            render();
+            
+            // 3. Render, passing focus information
+            render(activeId, cursorStart, cursorEnd); 
         }
 
         /** Simple Icon components (inline SVG or utility functions in HTML) */
