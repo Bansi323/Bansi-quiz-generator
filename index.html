@@ -117,8 +117,6 @@
                         <input type="text" id="filter-topic" placeholder="Topic (e.g., History, Physics)" 
                             class="w-full p-3 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500">
                         <input type="text" id="filter-year" placeholder="Year (e.g., 2022, 2023)"
-
-Bir Singh, [18-10-2025 10:03]
 class="w-full p-3 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500">
                         <input type="text" id="filter-exam" placeholder="Exam (e.g., SSC_CGL, Railway_NTPC)" 
                             class="w-full p-3 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500">
@@ -264,6 +262,7 @@ class="w-full p-3 border border-gray-300 rounded-lg focus:ring-purple-500 focus:
                 showModal("Error", "Kripya JSON data paste karein.", true);
                 return;
             }
+
 try {
                 const data = JSON.parse(jsonString);
                 if (!Array.isArray(data) || data.length === 0) {
@@ -339,8 +338,6 @@ try {
             } else {
                 document.getElementById('generate-btn').innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><path d="M3 3v18h18M3 18l7-7 4 4 8-8"></path></svg>Quiz Generate Karein';
 
-Bir Singh, [18-10-2025 10:03]
-}
         }
 
         // --- Core Quiz Generation Logic ---
@@ -409,6 +406,8 @@ Bir Singh, [18-10-2025 10:03]
                         const topicMatch = !lastPyqFilter.topic || (tags.topic && tags.topic.toLowerCase().includes(lastPyqFilter.topic));
                         const yearMatch = !lastPyqFilter.year || (tags.year && tags.year.toLowerCase().includes(lastPyqFilter.year));
                         const examMatch = !lastPyqFilter.exam || (tags.exam && tags.exam.toLowerCase().includes(lastPyqFilter.exam));
+
+
 return topicMatch && yearMatch && examMatch;
                     });
                     
@@ -477,6 +476,7 @@ return topicMatch && yearMatch && examMatch;
             document.getElementById('num-questions').value = currentQuestionCount;
             generateQuiz();
         }
+
 // --- UI Rendering ---
         function renderQuiz(data, topic) {
             const quizForm = document.getElementById('quiz-form');
@@ -596,5 +596,4 @@ if(selectedOption) {
 
     </script>
 </body>
-
 </html>
